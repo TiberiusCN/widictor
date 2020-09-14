@@ -107,7 +107,12 @@ impl Combinator {
       for (word, sections) in lang_value.build().into_iter().enumerate() {
         println!("  {}:", word);
         for section in &sections.sections {
-          println!("    {:?}", section.as_ref().map(|p| p.0.name));
+          if let Some(section) = section.as_ref() {
+            let section = &section.0;
+            println!("    {:?}:\n\x1b[31m{}\x1b[0m\n", section.name, section.text());
+          } else {
+            println!("    Empty");
+          }
         }
       }
     }
@@ -320,12 +325,36 @@ impl WordSection {
     }
     builder
   }
+
+  fn text(&self) -> String {
+    let mut out = String::new();
+    for text in &self.content {
+      out += &text.text();
+    }
+    out
+  }
 }
 
 #[derive(Debug, Clone)]
 enum Piece {
   Raw(String),
   Template(HashMap<String, String>),
+}
+
+impl Piece {
+  fn text(&self) -> String {
+    match self {
+      Self::Raw(raw) => raw.clone(),
+      Self::Template(map) => {
+        print!("{{");
+        for (key, value) in map.iter() {
+          print!("{}={}, ", key, value);
+        }
+        print!("}}");
+        format!("{{{}}}", map["1"])
+      },
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -424,6 +453,25 @@ impl Text {
 
     Ok((input, text))
   }
+
+  fn text(&self) -> String {
+    let mut total = String::new();
+    match self {
+      Self::Text(texts) => {
+        for text in texts {
+          total += &text.text();
+        }
+      },
+      Self::List(level, texts) => {
+        for text in texts {
+          total += "\n";
+          for _ in 0..*level { total += "*"; }
+          total += &text.text();
+        }
+      },
+    }
+    total
+  }
 }
 
 #[derive(Debug)]
@@ -505,3 +553,12 @@ impl Word {
     }
   }
 }
+
+// http://translate.googleapis.com/translate_a/single?client=gtx&sl=EN&tl=<LANG>&dt=t&q=phrase%20with%20percents
+
+/*
+{
+  subwords: [],
+  text: [],
+}
+*/
