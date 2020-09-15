@@ -2,6 +2,7 @@ use serde_derive::*;
 use std::collections::HashMap;
 use nom::*;
 use nom::error::*;
+use template::TemplateText;
 
 #[derive(Debug)]
 pub enum WikiError<I> {
@@ -346,12 +347,19 @@ impl Piece {
     match self {
       Self::Raw(raw) => raw.clone(),
       Self::Template(map) => {
-        print!("{{");
+        let mut com = std::process::Command::new(&map["0"]);
         for (key, value) in map.iter() {
-          print!("{}={}, ", key, value);
+          com.env(format!("ENV_{}", key), value);
         }
-        print!("}}");
-        format!("{{{}}}", map["1"])
+        let com = com.output().unwrap_or_else(|e| panic!("process {} failed: {}", &map["0"], e));
+        if com.status.success() {
+          let stdout = std::str::from_utf8(com.stdout.as_slice()).unwrap();
+          let text: TemplateText = serde_json::from_str(stdout).unwrap();
+          text.text
+        } else {
+          let stderr = String::from_utf8(com.stderr).unwrap_or_else(|e| format!("bad utf-8: {}", e));
+          panic!("{} fails: {}", &map["0"], stderr);
+        }
       },
     }
   }
@@ -405,8 +413,9 @@ impl Text {
           let (id, val) = p.split_at(ptr);
           (id.to_owned(), (&val[1..]).to_owned())
         } else {
+          let out = (format!("{}", id), p.to_owned());
           id += 1;
-          (format!("{}", id), p.to_owned())
+          out
         }
       }).collect()
     )
@@ -512,6 +521,7 @@ fn main() {
 }
 
 fn scan(page: &str) {
+  std::env::set_var("ENV_MAINWORD", page);
   let resp = reqwest::blocking::get(&format!("https://en.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&titles={}", page)).unwrap();
   let resp: ApiAnswer = serde_json::from_reader(resp.bytes().unwrap().as_ref()).unwrap();
   let data = &resp.query.pages.iter().last().unwrap().1.revisions[0].data;
@@ -555,10 +565,3 @@ impl Word {
 }
 
 // http://translate.googleapis.com/translate_a/single?client=gtx&sl=EN&tl=<LANG>&dt=t&q=phrase%20with%20percents
-
-/*
-{
-  subwords: [],
-  text: [],
-}
-*/
