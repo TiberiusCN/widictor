@@ -99,12 +99,12 @@ impl Combinator {
     self.texts.push(text);
   }
 
-  fn build(self) {
-    let src = self.finish();
+  fn build(&self, language: &str) {
+    if self.last_language != None { panic!("unfinished"); }
     let mut subwords: Vec<(String, String)> = Vec::new();
 
-    for (lang, lang_value) in src.languages.iter() {
-      println!("{}:", lang);
+    if let Some(lang_value) = self.languages.get(language) {
+      println!("{}:", language);
       for (word, sections) in lang_value.build().into_iter().enumerate() {
         println!("  {}:", word);
         for section in &sections.sections {
@@ -167,7 +167,7 @@ impl Wiki {
 
     let combinator = combinator.finish();
 
-    combinator.build();
+    combinator.build("Latin");
     panic!();
 
     /*
@@ -226,6 +226,10 @@ enum Section {
   UsageNotes,
   Translations,
   Anagrams,
+  Synonyms,
+  Antonyms,
+  Determiner,
+  Contraction,
   
   Conjunction,
   Noun,
@@ -234,12 +238,15 @@ enum Section {
   Participle,
   Preposition,
   Pronoun,
+  Interjection,
+  Adverb,
+  Numeral,
 }
 
 impl Section {
   fn species(&self) -> Option<usize> {
     Some(match self {
-      Self::Conjunction | Self::Noun | Self::Verb | Self::Adjective | Self::Participle | Self::Preposition | Self::Pronoun => 0,
+      Self::Conjunction | Self::Noun | Self::Verb | Self::Adjective | Self::Participle | Self::Preposition | Self::Pronoun | Self::Interjection | Self::Adverb | Self::Numeral => 0,
       Self::Declension => 1,
       Self::DerivedTerms => 2,
       Self::RelatedTerms => 3,
@@ -249,7 +256,7 @@ impl Section {
       Self::Conjugation => 7,
       Self::UsageNotes => 8,
 
-      Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms => return None,
+      Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Synonyms | Self::Antonyms | Self::Determiner | Self::Contraction => return None,
     })
   }
 }
@@ -293,13 +300,21 @@ impl WordSection {
       else if value.starts_with("Translations") { Section::Translations }
       else if value.starts_with("Anagrams") { Section::Anagrams }
       else if value.starts_with("Conjunction") { Section::Conjunction }
+      else if value.starts_with("Synonyms") { Section::Synonyms }
+      else if value.starts_with("Antonyms") { Section::Antonyms }
+      else if value.starts_with("Determiner") { Section::Determiner }
+      else if value.starts_with("Contraction") { Section::Contraction }
 
       else if value.starts_with("Noun") { Section::Noun }
+      else if value.starts_with("Proper noun") { Section::Noun }
       else if value.starts_with("Verb") { Section::Verb }
       else if value.starts_with("Adjective") { Section::Adjective }
       else if value.starts_with("Preposition") { Section::Preposition }
       else if value.starts_with("Pronoun") { Section::Pronoun }
       else if value.starts_with("Participle") { Section::Participle }
+      else if value.starts_with("Interjection") { Section::Interjection }
+      else if value.starts_with("Adverb") { Section::Adverb }
+      else if value.starts_with("Numeral") { Section::Numeral }
       else { panic!("{}", value); }
     };
     Ok((tail, Self {
@@ -355,7 +370,8 @@ impl Piece {
         if com.status.success() {
           let stdout = std::str::from_utf8(com.stdout.as_slice()).unwrap();
           let text: TemplateText = serde_json::from_str(stdout).unwrap();
-          text.text
+          println!("FOUND: {:#?}", text);
+          String::new()
         } else {
           let stderr = String::from_utf8(com.stderr).unwrap_or_else(|e| format!("bad utf-8: {}", e));
           panic!("{} fails: {}", &map["0"], stderr);
@@ -538,7 +554,7 @@ fn scan(page: &str) {
 
 #[derive(Clone, Debug, Default)]
 struct Word {
-  sections: [Option<(WordSection, usize)>; 8],
+  sections: [Option<(WordSection, usize)>; 9],
 }
 
 impl Word {
