@@ -102,8 +102,18 @@ struct Noun {
 }
 
 impl Noun {
-  fn new(word: &str) -> Self {
-    let lemma = env_var("ENV_1").unwrap();
+  fn merge(&mut self, other: Self) {
+    for tag in other.tags {
+      self.tags.insert(tag);
+    }
+    for (id, val) in other.table {
+      let val = format!("{} | {}", self.table.get(&id).cloned().unwrap_or_else(|| "".to_owned()), val);
+      self.table.insert(id, val);
+    }
+    self.tags.insert("multideclension".to_string());
+  }
+  
+  fn new(word: &str, lemma: String) -> Self {
     let (lemma, stem, decl) = parse_lemma(&lemma);
 
     let mut lemmas = vec![
@@ -281,7 +291,7 @@ impl Noun {
         "-voci" => voci_type2 = Rule::Forbidden,
         "ies" => ies_type5 = Rule::Set,
         "-ies" => ies_type5 = Rule::Forbidden,
-        "Callisto" => callysto_type4 = Rule::Set,
+        "Callisto" => greek = Rule::Set,
         // i-stem manual types
         "acc-im" => { acc_im_type3 = Rule::Set; i_type3 = Rule::Set; },
         "acc-im-in" => { acc_im_in_type3 = Rule::Set; i_type3 = Rule::Set; },
@@ -1174,7 +1184,22 @@ impl Declension {
 }
 
 fn latina(word: &str, request: Request) -> TemplateText {
-  let noun = Noun::new(word);
+  let noun = if let Ok(one_lemma) = env_var("ENV_1") {
+    Noun::new(word, one_lemma)
+  } else {
+    let mut nouns = Vec::new();
+    let mut i = 0;
+    while let Ok(lemma) = env_var(&format!("ENV_1_{}", i)) {
+      i += 1;
+      nouns.push(Noun::new(word, lemma));
+    }
+    let mut nouns = nouns.into_iter();
+    let mut noun = nouns.next().unwrap();
+    for variant in nouns {
+      noun.merge(variant);
+    }
+    noun
+  };
 
   let mut subwords = Vec::new();
   if let Ok(word) = env_var("ENV_f") { subwords.push(word); }

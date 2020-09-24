@@ -354,7 +354,7 @@ impl WordSection {
 #[derive(Debug, Clone)]
 enum Piece {
   Raw(String),
-  Template(HashMap<String, String>),
+  Template(HashMap<String, Vec<String>>),
 }
 
 impl Piece {
@@ -362,11 +362,19 @@ impl Piece {
     match self {
       Self::Raw(raw) => raw.clone(),
       Self::Template(map) => {
-        let mut com = std::process::Command::new(&map["0"]);
-        for (key, value) in map.iter() {
-          com.env(format!("ENV_{}", key), value);
+        let mut com = std::process::Command::new(&map["0"][0]);
+        for (key, values) in map.iter() {
+          if values.len() > 1 {
+            for (index, value) in values.iter().enumerate() {
+              com.env(format!("ENV_{}_{}", key, index), value);
+            }
+          } else {
+            for (index, value) in values.iter().enumerate() {
+              com.env(format!("ENV_{}", key), value);
+            }
+          }
         }
-        let com = com.output().unwrap_or_else(|e| panic!("process {} failed: {}", &map["0"], e));
+        let com = com.output().unwrap_or_else(|e| panic!("process {} failed: {}", &map["0"][0], e));
         if com.status.success() {
           let stdout = std::str::from_utf8(com.stdout.as_slice()).unwrap();
           let text: TemplateText = serde_json::from_str(stdout).unwrap();
@@ -374,7 +382,7 @@ impl Piece {
           String::new()
         } else {
           let stderr = String::from_utf8(com.stderr).unwrap_or_else(|e| format!("bad utf-8: {}", e));
-          panic!("{} fails: {}", &map["0"], stderr);
+          panic!("{} fails: {}", &map["0"][0], stderr);
         }
       },
     }
@@ -394,7 +402,7 @@ impl Text {
   named!(template_close<&str, &str, WikiError<&str>>, tag!("}}"));
   named!(link_open<&str, &str, WikiError<&str>>, tag!("[["));
   named!(link_close<&str, &str, WikiError<&str>>, tag!("]]"));
-  named!(template<&str, Vec<&str>, WikiError<&str>>,
+  named!(template<&str, (Vec<Option<&str>>, Vec<Vec<&str>>), WikiError<&str>>,
     map!(
       delimited!(
         Self::template_open,
@@ -403,36 +411,63 @@ impl Text {
       ),
       |s| {
         let mut v = Vec::new();
+        let mut subv = Vec::new();
         let mut begin = 0;
         let mut end = 0;
+        let mut multi = 0;
+        let mut headers = Vec::new();
+        let mut header = None;
         for c in s.chars() {
-          if c == '|' {
-            v.push(&s[begin..end]);
-            begin = end + 1;
-            end = begin;
-          } else {
-            end += c.len_utf8();
+          match c {
+            '=' => {
+              header = Some(&s[begin..end]);
+              begin = end + 1;
+              end = begin;
+            },
+            '|' => {
+              headers.push(header.take());
+              subv.push(&s[begin..end]);
+              v.push(subv);
+              subv = Vec::new();
+              begin = end + 1;
+              end = begin;
+            },
+            '(' => {
+              multi += 1;
+            },
+            ')' => {
+              multi -= 1;
+            },
+            ',' if multi == 2 => {
+              subv.push(&s[begin..end]);
+              begin = end + 1;
+              end = begin;
+            },
+            c => {
+              end += c.len_utf8();
+            },
           }
         }
-        v.push(&s[begin..]);
-        v
+        headers.push(header);
+        subv.push(&s[begin..]);
+        v.push(subv);
+        println!("{:?}", v);
+        (headers, v)
       }
     )
   );
   named!(link<&str, &str, WikiError<&str>>, delimited!(Self::link_open, take_while1!(|c: char| c != ']'), Self::link_close));
-  named!(wrapped_template<&str, Piece, WikiError<&str>>, map!(Self::template, |t| {
+  named!(wrapped_template<&str, Piece, WikiError<&str>>, map!(Self::template, |(headers, values)| {
     let mut id = 0;
 
     Piece::Template(
-      t.into_iter().map(|p| {
-        if let Some(ptr) = p.find('=') {
-          let (id, val) = p.split_at(ptr);
-          (id.to_owned(), (&val[1..]).to_owned())
-        } else {
-          let out = (format!("{}", id), p.to_owned());
+      headers.into_iter().zip(values.into_iter()).map(|(header, values)| {
+        let header = header.map(|p| p.to_owned()).unwrap_or_else(|| {
+          let out = format!("{}", id);
           id += 1;
           out
-        }
+        });
+        (header, values.into_iter().map(|v| v.to_owned()).collect())
       }).collect()
     )
   }));
