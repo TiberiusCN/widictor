@@ -402,7 +402,7 @@ impl Text {
   named!(template_close<&str, &str, WikiError<&str>>, tag!("}}"));
   named!(link_open<&str, &str, WikiError<&str>>, tag!("[["));
   named!(link_close<&str, &str, WikiError<&str>>, tag!("]]"));
-  named!(template<&str, (Vec<Option<&str>>, Vec<Vec<&str>>), WikiError<&str>>,
+  named!(template<&str, (Vec<Option<String>>, Vec<Vec<String>>), WikiError<&str>>,
     map!(
       delimited!(
         Self::template_open,
@@ -412,25 +412,22 @@ impl Text {
       |s| {
         let mut v = Vec::new();
         let mut subv = Vec::new();
-        let mut begin = 0;
-        let mut end = 0;
         let mut multi = 0;
         let mut headers = Vec::new();
         let mut header = None;
+        let mut text = String::new();
         for c in s.chars() {
           match c {
             '=' => {
-              header = Some(&s[begin..end]);
-              begin = end + 1;
-              end = begin;
+              header = Some(text);
+              text = String::new();
             },
             '|' => {
               headers.push(header.take());
-              subv.push(&s[begin..end]);
+              subv.push(text);
+              text = String::new();
               v.push(subv);
               subv = Vec::new();
-              begin = end + 1;
-              end = begin;
             },
             '(' => {
               multi += 1;
@@ -439,19 +436,17 @@ impl Text {
               multi -= 1;
             },
             ',' if multi == 2 => {
-              subv.push(&s[begin..end]);
-              begin = end + 1;
-              end = begin;
+              subv.push(text);
+              text = String::new();
             },
             c => {
-              end += c.len_utf8();
+              text.push(c);
             },
           }
         }
         headers.push(header);
-        subv.push(&s[begin..]);
+        subv.push(text);
         v.push(subv);
-        println!("{:?}", v);
         (headers, v)
       }
     )

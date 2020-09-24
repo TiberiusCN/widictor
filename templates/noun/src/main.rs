@@ -8,8 +8,8 @@ fn main() {
   let lang = env_var("ENV_0").unwrap();
 
   let data = match lang.as_str() {
-    "la-noun" | "la-proper noun" => latina(&word, Request::Lemma),
-    "la-ndecl" => latina(&word, Request::Table),
+    "la-noun" | "la-proper noun" => latina(&word),
+    "la-ndecl" => Default::default(),
     u => panic!("unsupported: {}", u),
   };
 
@@ -163,28 +163,28 @@ impl Noun {
             .expect("unknown 2 declension ending")
         },
         Declension::D3 { .. } => {
-          lemma_end(&lemma, "e", "")
-            .or_else(|| lemma_end(&lemma, "ō", "ōn"))
-            .or_else(|| lemma_end(&lemma, "s", "t"))
-            .or_else(|| lemma_end(&lemma, "x", "c"))
-            .or_else(|| lemma_end(&lemma, "al", "āl"))
-            .or_else(|| lemma_end(&lemma, "ar", "ār"))
-            .or_else(|| lemma_end(&lemma, "er", "r"))
-            .or_else(|| lemma_end(&lemma, "or", "ōr"))
-            .or_else(|| lemma_end(&lemma, "gō", "gin"))
-            .or_else(|| lemma_end(&lemma, "ps", "p"))
-            .or_else(|| lemma_end(&lemma, "bs", "b"))
+          lemma_end(&lemma, "tūdō", "tūdin")
             .or_else(|| lemma_end(&lemma, "is", ""))
             .or_else(|| lemma_end(&lemma, "ēs", ""))
-            .or_else(|| lemma_end(&lemma, "us", "or"))
-            .or_else(|| lemma_end(&lemma, "ex", "ic"))
-            .or_else(|| lemma_end(&lemma, "ma", "mat"))
             .or_else(|| lemma_end(&lemma, "āns", "ant"))
             .or_else(|| lemma_end(&lemma, "ēns", "ent"))
             .or_else(|| lemma_end(&lemma, "ōns", "ont"))
-            .or_else(|| lemma_end(&lemma, "men", "min"))
             .or_else(|| lemma_end(&lemma, "ceps", "cipit"))
-            .or_else(|| lemma_end(&lemma, "tūdō", "tūdin"))
+            .or_else(|| lemma_end(&lemma, "us", "or"))
+            .or_else(|| lemma_end(&lemma, "ex", "ic"))
+            .or_else(|| lemma_end(&lemma, "ma", "mat"))
+            .or_else(|| lemma_end(&lemma, "e", ""))
+            .or_else(|| lemma_end(&lemma, "al", "āl"))
+            .or_else(|| lemma_end(&lemma, "ar", "ār"))
+            .or_else(|| lemma_end(&lemma, "men", "min"))
+            .or_else(|| lemma_end(&lemma, "er", "r"))
+            .or_else(|| lemma_end(&lemma, "or", "ōr"))
+            .or_else(|| lemma_end(&lemma, "gō", "gin"))
+            .or_else(|| lemma_end(&lemma, "ō", "ōn"))
+            .or_else(|| lemma_end(&lemma, "ps", "p"))
+            .or_else(|| lemma_end(&lemma, "bs", "b"))
+            .or_else(|| lemma_end(&lemma, "s", "t"))
+            .or_else(|| lemma_end(&lemma, "x", "c"))
             .unwrap_or_else(|| lemma.clone())
         },
         Declension::D4 { .. } => {
@@ -238,7 +238,6 @@ impl Noun {
     let mut abl_i_e_type3 = Rule::default();
     let mut abl_e_i_type3 = Rule::default();
     let mut abl_e_occ_i_type3 = Rule::default();
-    let mut callisto_type4 = Rule::default();
     let mut ies_type5 = Rule::default();
 
     for sub in subdecl {
@@ -498,6 +497,8 @@ impl Noun {
         me: me_type1.into(),
         greek: greek.into(),
         loc: loc.into(),
+        plural: tantum.plural.into(),
+        single: tantum.single.into(),
       },
       Declension::D2 {..} => Declension::D2 {
         er: er_type2.into(),
@@ -508,6 +509,8 @@ impl Noun {
         greek: greek.into(),
         loc: loc.into(),
         neuter: gender.neuter.into(),
+        plural: tantum.plural.into(),
+        single: tantum.single.into(),
       },
       Declension::D3 {..} => Declension::D3 {
         i: i_type3.into(),
@@ -515,7 +518,6 @@ impl Noun {
         ignis: ignis_type3.into(),
         navis: navis_type3.into(),
         loc: loc.into(),
-        plural: tantum.plural.into(),
         neuter: gender.neuter.into(),
         acc_im: acc_im_type3.into(),
         acc_im_in: acc_im_in_type3.into(),
@@ -527,13 +529,19 @@ impl Noun {
         abl_i_e: abl_i_e_type3.into(),
         abl_e_i: abl_e_i_type3.into(),
         abl_e_occ_i: abl_e_occ_i_type3.into(),
+        plural: tantum.plural.into(),
+        single: tantum.single.into(),
       },
       Declension::D4 {..} => Declension::D4 {
         neuter: gender.neuter.into(),
         greek: greek.into(),
+        plural: tantum.plural.into(),
+        single: tantum.single.into(),
       },
       Declension::D5 {..} => Declension::D5 {
         ies: ies_type5.into(),
+        plural: tantum.plural.into(),
+        single: tantum.single.into(),
       },
       n => n,
     };
@@ -693,6 +701,8 @@ enum Declension {
     me: bool,
     loc: bool,
     am: bool,
+    plural: bool,
+    single: bool,
   },
   D2 {
     neuter: bool,
@@ -703,6 +713,8 @@ enum Declension {
     ium: bool,
     loc: bool,
     us: bool,
+    plural: bool,
+    single: bool,
   },
   D3 {
     neuter: bool,
@@ -722,13 +734,18 @@ enum Declension {
     abl_i_e: bool,
     abl_e_i: bool,
     abl_e_occ_i: bool,
+    single: bool,
   },
   D4 {
     neuter: bool,
-    greek: bool
+    greek: bool,
+    plural: bool,
+    single: bool,
   },
   D5 {
     ies: bool,
+    plural: bool,
+    single: bool,
   },
   Irreg {},
   Indecl {},
@@ -739,8 +756,8 @@ impl Declension {
     let mut tags = HashSet::new();
     
     (match self {
-      Self::D1 { abus, greek, ma, me, loc, am } => {
-        tags.insert("decl_1".to_owned());
+      Self::D1 { abus, greek, ma, me, loc, am, plural, single } => {
+        tags.insert("declension_1".to_owned());
         if *abus { tags.insert("d1_abus".to_owned()); }
         if *greek { tags.insert("greek".to_owned()); }
         if *ma { tags.insert("d1_ma".to_owned()); }
@@ -749,8 +766,8 @@ impl Declension {
         if *am { tags.insert("d1_am".to_owned()); }
         "1"
       },
-      Self::D2 { neuter, greek, ius, er, voci, ium, loc, us } => {
-        tags.insert("decl_2".to_owned());
+      Self::D2 { neuter, greek, ius, er, voci, ium, loc, us, plural, single } => {
+        tags.insert("declension_2".to_owned());
         if *ius { tags.insert("d2_ius".to_owned()); }
         if *er { tags.insert("d2_er".to_owned()); }
         if *voci { tags.insert("d2_voci".to_owned()); }
@@ -761,8 +778,8 @@ impl Declension {
         if *greek { tags.insert("greek".to_owned()); }
         "2"
       },
-      Self::D3 { neuter, i, pure, ignis, navis, loc, plural, acc_im, acc_im_in, acc_im_in_em, acc_im_em, acc_im_occ_em, acc_em_im, abl_i, abl_i_e, abl_e_i, abl_e_occ_i } => {
-        tags.insert("decl_3".to_owned());
+      Self::D3 { neuter, i, pure, ignis, navis, loc, plural, acc_im, acc_im_in, acc_im_in_em, acc_im_em, acc_im_occ_em, acc_em_im, abl_i, abl_i_e, abl_e_i, abl_e_occ_i, single } => {
+        tags.insert("declension_3".to_owned());
         if *i { tags.insert("d3_i".to_owned()); }
         if *pure { tags.insert("d3_pure".to_owned()); }
         if *ignis { tags.insert("d3_ignis".to_owned()); }
@@ -782,14 +799,14 @@ impl Declension {
         if *plural { tags.insert("plural".to_owned()); }
         "3"
       },
-      Self::D4 { neuter, greek } => {
-        tags.insert("decl_4".to_owned());
+      Self::D4 { neuter, greek, plural, single } => {
+        tags.insert("declension_4".to_owned());
         if *neuter { tags.insert("neuter".to_owned()); }
         if *greek { tags.insert("greek".to_owned()); }
         "4"
       },
-      Self::D5 { ies } => {
-        tags.insert("decl_5".to_owned());
+      Self::D5 { ies, plural, single } => {
+        tags.insert("declension_5".to_owned());
         if *ies { tags.insert("d5_ies".to_owned()); }
         "5"
       },
@@ -811,6 +828,8 @@ impl Declension {
       me: false,
       loc: false,
       am: false,
+      plural: false,
+      single: false,
     }
   }
 
@@ -824,6 +843,8 @@ impl Declension {
       ium: false,
       loc: false,
       us: false,
+      plural: false,
+      single: false,
     }
   }
   
@@ -846,6 +867,7 @@ impl Declension {
       abl_i_e: false,
       abl_e_i: false,
       abl_e_occ_i: false,
+      single: false,
     }
   }
 
@@ -853,12 +875,16 @@ impl Declension {
     Self::D4 {
       neuter: false,
       greek: false,
+      plural: false,
+      single: false,
     }
   }
 
   fn d5() -> Self {
     Self::D5 {
       ies: false,
+      plural: false,
+      single: false,
     }
   }
 
@@ -877,94 +903,109 @@ impl Declension {
       }
     };
 
-    map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
     match self {
-      Self::D1 { abus, greek, ma, me, loc, am } => {
-        map.insert(Case::GenSg, from_stem_or_lemma(match
-          greek {
-            false => vec!["ae"],
-            true  => vec!["ēs"],
-        }));
-        map.insert(Case::DatSg, from_stem_or_lemma(vec!["ae"])); 
-        map.insert(Case::AccSg, from_stem_or_lemma(match
-          (  greek, ma,    me,    am) {
-            (false, false, false, false) => vec!["am"],
-            (true,  false, false, false) => vec!["ēn"],
-            (true,  true,  false, false) => vec!["ān"],
-            (true,  false, true,  false) => vec!["ēn"],
-            (false, false, false, true ) => vec!["ām"],
-            _ => panic!("bad subtypes"),
-        }));
-        map.insert(Case::AblSg, from_stem_or_lemma(match
-          (  greek, me) {
-            (false, false) => vec!["ā"],
-            (true,  false) => vec!["ē"],
-            (true,  true ) => vec!["ē"],
-            _ => panic!("bad subtypes"),
-        }));
-        map.insert(Case::VocSg, from_stem_or_lemma(match
-          (  greek, ma,    me,    am) {
-            (false, false, false, false) => vec!["a"],
-            (true,  false, false, false) => vec!["ē"],
-            (true,  true,  false, false) => vec!["ā"],
-            (true,  false, true,  false) => vec!["ē"],
-            (true,  false, false, true ) => vec!["ām"],
-            _ => panic!("bad subtypes"),
-        }));
-        map.insert(Case::NomPl, from_stem_or_lemma(vec!["ae"]));
-        map.insert(Case::GenPl, from_stem_or_lemma(vec!["arum"]));
-        map.insert(Case::DatPl, from_stem_or_lemma(match
-          abus {
-            true  => vec!["ābus"],
-            false => vec!["īs"],
-        }));
-        map.insert(Case::AccPl, from_stem_or_lemma(vec!["ās"]));
-        map.insert(Case::AblPl, from_stem_or_lemma(match
-          abus {
-            true  => vec!["ābus"],
-            false => vec!["īs"],
-        }));
-        map.insert(Case::VocPl, from_stem_or_lemma(vec!["ae"]));
-        if *loc {
-          map.insert(Case::LocSg, from_stem_or_lemma(vec!["ae"]));
-          map.insert(Case::LocPl, from_stem_or_lemma(vec!["īs"]));
+      Self::D1 { abus, greek, ma, me, loc, am, plural, single } => {
+        if !*plural {
+          map.insert(Case::GenSg, from_stem_or_lemma(match
+            greek {
+              false => vec!["ae"],
+              true  => vec!["ēs"],
+          }));
+          map.insert(Case::DatSg, from_stem_or_lemma(vec!["ae"])); 
+          map.insert(Case::AccSg, from_stem_or_lemma(match
+            (  greek, ma,    me,    am) {
+              (false, false, false, false) => vec!["am"],
+              (true,  false, false, false) => vec!["ēn"],
+              (true,  true,  false, false) => vec!["ān"],
+              (true,  false, true,  false) => vec!["ēn"],
+              (false, false, false, true ) => vec!["ām"],
+              _ => panic!("bad subtypes"),
+          }));
+          map.insert(Case::AblSg, from_stem_or_lemma(match
+            (  greek, me) {
+              (false, false) => vec!["ā"],
+              (true,  false) => vec!["ē"],
+              (true,  true ) => vec!["ē"],
+              _ => panic!("bad subtypes"),
+          }));
+          map.insert(Case::VocSg, from_stem_or_lemma(match
+            (  greek, ma,    me,    am) {
+              (false, false, false, false) => vec!["a"],
+              (true,  false, false, false) => vec!["ē"],
+              (true,  true,  false, false) => vec!["ā"],
+              (true,  false, true,  false) => vec!["ē"],
+              (true,  false, false, true ) => vec!["ām"],
+              _ => panic!("bad subtypes"),
+          }));
+          if *loc {
+            map.insert(Case::LocSg, from_stem_or_lemma(vec!["ae"]));
+          }
+        }
+        if !*single {
+          map.insert(Case::NomPl, from_stem_or_lemma(vec!["ae"]));
+          map.insert(Case::GenPl, from_stem_or_lemma(vec!["arum"]));
+          map.insert(Case::DatPl, from_stem_or_lemma(match
+            abus {
+              true  => vec!["ābus"],
+              false => vec!["īs"],
+          }));
+          map.insert(Case::AccPl, from_stem_or_lemma(vec!["ās"]));
+          map.insert(Case::AblPl, from_stem_or_lemma(match
+            abus {
+              true  => vec!["ābus"],
+              false => vec!["īs"],
+          }));
+          map.insert(Case::VocPl, from_stem_or_lemma(vec!["ae"]));
+          if *loc {
+            map.insert(Case::LocPl, from_stem_or_lemma(vec!["īs"]));
+          }
+        }
+        if *plural {
+          map.insert(Case::NomPl, from_stem_or_lemma(vec![]));
+        } else {
+          map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
         }
       },
-      Self::D2 { neuter, er, greek, ius, voci, ium, loc, us } => {
-        map.insert(Case::GenSg, from_stem_or_lemma(vec!["ī"]));
-        map.insert(Case::DatSg, from_stem_or_lemma(vec!["ō"]));
-        map.insert(Case::AccSg, from_stem_or_lemma(match
-          (  neuter,er,    greek, ius,   voci,  ium,   loc,   us) {
-            (false, false, false, false, false, false, false, false) => vec!["um"],
-            (true,  false, false, false, false, false, false, false) => vec!["um"],
-            (false, true,  false, false, false, false, false, false) => vec!["um"],
-            (false, false, true,  false, false, false, false, false) => vec!["on"],
-            (true,  false, true,  false, false, false, false, false) => vec!["on"],
-            (false, false, false, true,  false, false, false, false) => vec!["um"],
-            (false, false, false, true,  true,  false, false, false) => vec!["um"],
-            (true,  false, false, false, false, true,  false, false) => vec!["um"],
-            (false, false, false, false, false, false, true,  false) => vec!["um"],
-            (true,  false, false, false, false, false, true,  false) => vec!["um"],
-            (true,  false, false, false, false, false, false, true ) => vec!["us"],
-            _ => panic!("bad subtypes"),
-        }));
-        map.insert(Case::AblSg, from_stem_or_lemma(vec!["ō"]));
-        map.insert(Case::VocSg, from_stem_or_lemma(match
-          (  neuter,er,    greek, ius,   voci,  ium,   loc,   us) {
-            (false, false, false, false, false, false, false, false) => vec!["e"],
-            (true,  false, false, false, false, false, false, false) => vec!["um"],
-            (false, true,  false, false, false, false, false, false) => vec![],
-            (false, false, true,  false, false, false, false, false) => vec!["e"],
-            (true,  false, true,  false, false, false, false, false) => vec!["on"],
-            (false, false, false, true,  false, false, false, false) => vec!["e"],
-            (false, false, false, true,  true,  false, false, false) => vec!["ī"],
-            (true,  false, false, false, false, true,  false, false) => vec!["um"],
-            (false, false, false, false, false, false, true,  false) => vec!["us"],
-            (true,  false, false, false, false, false, true,  false) => vec!["um"],
-            (true,  false, false, false, false, false, false, true ) => vec!["us"],
-            _ => panic!("bad subtypes"),
-        }));
-        if !(*neuter && *us) {
+      Self::D2 { neuter, er, greek, ius, voci, ium, loc, us, plural, single } => {
+        if !*plural {
+          map.insert(Case::GenSg, from_stem_or_lemma(vec!["ī"]));
+          map.insert(Case::DatSg, from_stem_or_lemma(vec!["ō"]));
+          map.insert(Case::AccSg, from_stem_or_lemma(match
+            (  neuter,er,    greek, ius,   voci,  ium,   loc,   us) {
+              (false, false, false, false, false, false, false, false) => vec!["um"],
+              (true,  false, false, false, false, false, false, false) => vec!["um"],
+              (false, true,  false, false, false, false, false, false) => vec!["um"],
+              (false, false, true,  false, false, false, false, false) => vec!["on"],
+              (true,  false, true,  false, false, false, false, false) => vec!["on"],
+              (false, false, false, true,  false, false, false, false) => vec!["um"],
+              (false, false, false, true,  true,  false, false, false) => vec!["um"],
+              (true,  false, false, false, false, true,  false, false) => vec!["um"],
+              (false, false, false, false, false, false, true,  false) => vec!["um"],
+              (true,  false, false, false, false, false, true,  false) => vec!["um"],
+              (true,  false, false, false, false, false, false, true ) => vec!["us"],
+              _ => panic!("bad subtypes"),
+          }));
+          map.insert(Case::AblSg, from_stem_or_lemma(vec!["ō"]));
+          map.insert(Case::VocSg, from_stem_or_lemma(match
+            (  neuter,er,    greek, ius,   voci,  ium,   loc,   us) {
+              (false, false, false, false, false, false, false, false) => vec!["e"],
+              (true,  false, false, false, false, false, false, false) => vec!["um"],
+              (false, true,  false, false, false, false, false, false) => vec![],
+              (false, false, true,  false, false, false, false, false) => vec!["e"],
+              (true,  false, true,  false, false, false, false, false) => vec!["on"],
+              (false, false, false, true,  false, false, false, false) => vec!["e"],
+              (false, false, false, true,  true,  false, false, false) => vec!["ī"],
+              (true,  false, false, false, false, true,  false, false) => vec!["um"],
+              (false, false, false, false, false, false, true,  false) => vec!["us"],
+              (true,  false, false, false, false, false, true,  false) => vec!["um"],
+              (true,  false, false, false, false, false, false, true ) => vec!["us"],
+              _ => panic!("bad subtypes"),
+          }));
+          if *loc {
+            map.insert(Case::LocSg, from_stem_or_lemma(vec!["ī"]));
+          }
+        }
+        if !(*neuter && *us) && !*single {
           map.insert(Case::NomPl, from_stem_or_lemma(match
             (  neuter,er,    greek, ius,   voci,  ium,   loc) {
               (false, false, false, false, false, false, false) => vec!["ī"],
@@ -1010,14 +1051,18 @@ impl Declension {
               _ => panic!("bad subtypes"),
           }));
           map.insert(Case::AblPl, from_stem_or_lemma(vec!["īs"]));
+          if *loc {
+            map.insert(Case::LocPl, from_stem_or_lemma(vec!["īs"]));
+          }
         }
-        if *loc {
-          map.insert(Case::LocSg, from_stem_or_lemma(vec!["ī"]));
-          map.insert(Case::LocPl, from_stem_or_lemma(vec!["īs"]));
+        if *plural {
+          map.insert(Case::NomPl, from_stem_or_lemma(vec![]));
+        } else {
+          map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
         }
       },
-      Self::D3 { neuter, i, pure, ignis, navis, loc, plural, acc_im, acc_im_in, acc_im_in_em, acc_im_em, acc_im_occ_em, acc_em_im, abl_i, abl_i_e, abl_e_i, abl_e_occ_i } => {
-        if !(*loc && *plural) {
+      Self::D3 { neuter, i, pure, ignis, navis, loc, plural, acc_im, acc_im_in, acc_im_in_em, acc_im_em, acc_im_occ_em, acc_em_im, abl_i, abl_i_e, abl_e_i, abl_e_occ_i, single } => {
+        if !*plural {
           map.insert(Case::GenSg, from_stem_or_lemma(vec!["is"]));
           map.insert(Case::DatSg, from_stem_or_lemma(vec!["ī"]));
           map.insert(Case::AccSg, from_stem_or_lemma(match
@@ -1059,7 +1104,7 @@ impl Declension {
             map.insert(Case::LocSg, from_stem_or_lemma(vec!["ī", "e"]));
           }
         }
-        if !(*loc && !*plural) {
+        if !*single {
           map.insert(Case::NomPl, from_stem_or_lemma(match
             (  neuter,i,     pure,  ignis, navis, loc,   plural) {
               (false, false, false, false, false, false, false) => vec!["ēs"],
@@ -1114,34 +1159,47 @@ impl Declension {
             map.insert(Case::LocPl, from_stem_or_lemma(vec!["ibus"]));
           }
         }
+        if *plural {
+          map.insert(Case::NomPl, from_stem_or_lemma(vec![]));
+        } else {
+          map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
+        }
       },
-      Self::D4 { neuter, greek } => {
+      Self::D4 { neuter, greek, plural, single } => {
         match (neuter, greek) {
           (false, false) => {
-            map.insert(Case::GenSg, from_stem_or_lemma(vec!["ūs"]));
-            map.insert(Case::DatSg, from_stem_or_lemma(vec!["uī"]));
-            map.insert(Case::AccSg, from_stem_or_lemma(vec!["um"]));
-            map.insert(Case::AblSg, from_stem_or_lemma(vec!["ū"]));
-            map.insert(Case::VocSg, from_stem_or_lemma(vec!["us"]));
-            map.insert(Case::NomPl, from_stem_or_lemma(vec!["ūs"]));
-            map.insert(Case::GenPl, from_stem_or_lemma(vec!["uum"]));
-            map.insert(Case::DatPl, from_stem_or_lemma(vec!["ibus"]));
-            map.insert(Case::AccPl, from_stem_or_lemma(vec!["ūs"]));
-            map.insert(Case::AblPl, from_stem_or_lemma(vec!["ibus"]));
-            map.insert(Case::VocPl, from_stem_or_lemma(vec!["ūs"]));
+            if !*plural {
+              map.insert(Case::GenSg, from_stem_or_lemma(vec!["ūs"]));
+              map.insert(Case::DatSg, from_stem_or_lemma(vec!["uī"]));
+              map.insert(Case::AccSg, from_stem_or_lemma(vec!["um"]));
+              map.insert(Case::AblSg, from_stem_or_lemma(vec!["ū"]));
+              map.insert(Case::VocSg, from_stem_or_lemma(vec!["us"]));
+            }
+            if !*single {
+              map.insert(Case::NomPl, from_stem_or_lemma(vec!["ūs"]));
+              map.insert(Case::GenPl, from_stem_or_lemma(vec!["uum"]));
+              map.insert(Case::DatPl, from_stem_or_lemma(vec!["ibus"]));
+              map.insert(Case::AccPl, from_stem_or_lemma(vec!["ūs"]));
+              map.insert(Case::AblPl, from_stem_or_lemma(vec!["ibus"]));
+              map.insert(Case::VocPl, from_stem_or_lemma(vec!["ūs"]));
+            }
           },
           (true, false) => {
-            map.insert(Case::GenSg, from_stem_or_lemma(vec!["ūs", "ū"]));
-            map.insert(Case::DatSg, from_stem_or_lemma(vec!["ūī", "ū"]));
-            map.insert(Case::AccSg, from_stem_or_lemma(vec!["ū"]));
-            map.insert(Case::AblSg, from_stem_or_lemma(vec!["ū"]));
-            map.insert(Case::VocSg, from_stem_or_lemma(vec!["ū"]));
-            map.insert(Case::NomPl, from_stem_or_lemma(vec!["ua"]));
-            map.insert(Case::GenPl, from_stem_or_lemma(vec!["uum"]));
-            map.insert(Case::DatPl, from_stem_or_lemma(vec!["ibus"]));
-            map.insert(Case::AccPl, from_stem_or_lemma(vec!["ua"]));
-            map.insert(Case::AblPl, from_stem_or_lemma(vec!["ibus"]));
-            map.insert(Case::VocPl, from_stem_or_lemma(vec!["ua"]));
+            if !*plural {
+              map.insert(Case::GenSg, from_stem_or_lemma(vec!["ūs", "ū"]));
+              map.insert(Case::DatSg, from_stem_or_lemma(vec!["ūī", "ū"]));
+              map.insert(Case::AccSg, from_stem_or_lemma(vec!["ū"]));
+              map.insert(Case::AblSg, from_stem_or_lemma(vec!["ū"]));
+              map.insert(Case::VocSg, from_stem_or_lemma(vec!["ū"]));
+            }
+            if !*single {
+              map.insert(Case::NomPl, from_stem_or_lemma(vec!["ua"]));
+              map.insert(Case::GenPl, from_stem_or_lemma(vec!["uum"]));
+              map.insert(Case::DatPl, from_stem_or_lemma(vec!["ibus"]));
+              map.insert(Case::AccPl, from_stem_or_lemma(vec!["ua"]));
+              map.insert(Case::AblPl, from_stem_or_lemma(vec!["ibus"]));
+              map.insert(Case::VocPl, from_stem_or_lemma(vec!["ua"]));
+            }
           },
           (false, true) => {
             map.insert(Case::GenSg, from_stem_or_lemma(vec!["ūs"]));
@@ -1152,38 +1210,54 @@ impl Declension {
           },
           _ => panic!("bad subtypes"),
         }
+        if *plural {
+          map.insert(Case::NomPl, from_stem_or_lemma(vec![]));
+        } else {
+          map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
+        }
       },
-      Self::D5 { ies } => {
-        map.insert(Case::GenSg, from_stem_or_lemma(match
-          ies {
-            true  => vec!["ēī"],
-            false => vec!["eī"],
-        }));
-        map.insert(Case::DatSg, from_stem_or_lemma(match
-          ies {
-            true  => vec!["ēī"],
-            false => vec!["eī"],
-        }));
-        map.insert(Case::AccSg, from_stem_or_lemma(vec!["em"]));
-        map.insert(Case::AblSg, from_stem_or_lemma(vec!["ē"]));
-        map.insert(Case::VocSg, from_stem_or_lemma(vec!["ēs"]));
-        map.insert(Case::LocSg, from_stem_or_lemma(vec!["ē"]));
-        map.insert(Case::NomPl, from_stem_or_lemma(vec!["ēs"]));
-        map.insert(Case::GenPl, from_stem_or_lemma(vec!["ērum"]));
-        map.insert(Case::DatPl, from_stem_or_lemma(vec!["ēbus"]));
-        map.insert(Case::AccPl, from_stem_or_lemma(vec!["ēs"]));
-        map.insert(Case::AblPl, from_stem_or_lemma(vec!["ēbus"]));
-        map.insert(Case::VocPl, from_stem_or_lemma(vec!["ēs"]));
-        map.insert(Case::LocPl, from_stem_or_lemma(vec!["ēbus"]));
+      Self::D5 { ies, plural, single } => {
+        if !*plural {
+          map.insert(Case::GenSg, from_stem_or_lemma(match
+            ies {
+              true  => vec!["ēī"],
+              false => vec!["eī"],
+          }));
+          map.insert(Case::DatSg, from_stem_or_lemma(match
+            ies {
+              true  => vec!["ēī"],
+              false => vec!["eī"],
+          }));
+          map.insert(Case::AccSg, from_stem_or_lemma(vec!["em"]));
+          map.insert(Case::AblSg, from_stem_or_lemma(vec!["ē"]));
+          map.insert(Case::VocSg, from_stem_or_lemma(vec!["ēs"]));
+          map.insert(Case::LocSg, from_stem_or_lemma(vec!["ē"]));
+        }
+        if !*single {
+          map.insert(Case::NomPl, from_stem_or_lemma(vec!["ēs"]));
+          map.insert(Case::GenPl, from_stem_or_lemma(vec!["ērum"]));
+          map.insert(Case::DatPl, from_stem_or_lemma(vec!["ēbus"]));
+          map.insert(Case::AccPl, from_stem_or_lemma(vec!["ēs"]));
+          map.insert(Case::AblPl, from_stem_or_lemma(vec!["ēbus"]));
+          map.insert(Case::VocPl, from_stem_or_lemma(vec!["ēs"]));
+          map.insert(Case::LocPl, from_stem_or_lemma(vec!["ēbus"]));
+        }
+        if *plural {
+          map.insert(Case::NomPl, from_stem_or_lemma(vec![]));
+        } else {
+          map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
+        }
       },
-      _ => {},
+      _ => {
+        map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
+      },
     }
 
     map
   }
 }
 
-fn latina(word: &str, request: Request) -> TemplateText {
+fn latina(word: &str) -> TemplateText {
   let noun = if let Ok(one_lemma) = env_var("ENV_1") {
     Noun::new(word, one_lemma)
   } else {
@@ -1204,38 +1278,17 @@ fn latina(word: &str, request: Request) -> TemplateText {
   let mut subwords = Vec::new();
   if let Ok(word) = env_var("ENV_f") { subwords.push(word); }
   if let Ok(word) = env_var("ENV_m") { subwords.push(word); }
-  let tags = noun.tags.into_iter().map(|v| v.to_string()).collect();
-  let notes = noun.footnote;
-  let conjugation = None;
-  let pronunciation = None;
-  let meanings = None;
-  let examples = None;
 
-  match request {
-    Request::Lemma => TemplateText {
-      mutation: None,
-      lemma: Some(noun.lemmas[0].clone()),
-      declension: None,
-      notes,
-      subwords,
-      tags,
-      conjugation,
-      pronunciation,
-      meanings,
-      examples,
-    },
-    Request::Table => TemplateText {
-      mutation: Some(noun.table),
-      lemma: None,
-      declension: Some(noun.declension),
-      notes,
-      subwords,
-      tags,
-      conjugation,
-      pronunciation,
-      meanings,
-      examples,
-    },
+  TemplateText {
+    mutation: Some(noun.table),
+    lemma: Some(noun.lemmas[0].clone()),
+    tags: noun.tags.into_iter().map(|v| v.to_string()).collect(),
+    notes: noun.footnote,
+    conjugation: None,
+    pronunciation: None,
+    meanings: None,
+    examples: None,
+    subwords,
   }
 }
 
@@ -1303,9 +1356,4 @@ impl ToString for Case {
       Self::LocPl => "loc.pl.".to_owned(),
     }
   }
-}
-
-enum Request {
-  Lemma,
-  Table,
 }
