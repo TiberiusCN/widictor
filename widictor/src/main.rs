@@ -241,12 +241,13 @@ enum Section {
   Interjection,
   Adverb,
   Numeral,
+  Particle,
 }
 
 impl Section {
   fn species(&self) -> Option<usize> {
     Some(match self {
-      Self::Conjunction | Self::Noun | Self::Verb | Self::Adjective | Self::Participle | Self::Preposition | Self::Pronoun | Self::Interjection | Self::Adverb | Self::Numeral => 0,
+      Self::Conjunction | Self::Noun | Self::Verb | Self::Adjective | Self::Participle | Self::Preposition | Self::Pronoun | Self::Interjection | Self::Adverb | Self::Numeral | Self::Particle => 0,
       Self::Declension => 1,
       Self::DerivedTerms => 2,
       Self::RelatedTerms => 3,
@@ -315,6 +316,7 @@ impl WordSection {
       else if value.starts_with("Interjection") { Section::Interjection }
       else if value.starts_with("Adverb") { Section::Adverb }
       else if value.starts_with("Numeral") { Section::Numeral }
+      else if value.starts_with("Particle") { Section::Particle }
       else { panic!("{}", value); }
     };
     Ok((tail, Self {
@@ -369,9 +371,7 @@ impl Piece {
               com.env(format!("ENV_{}_{}", key, index), value);
             }
           } else {
-            for (index, value) in values.iter().enumerate() {
-              com.env(format!("ENV_{}", key), value);
-            }
+            com.env(format!("ENV_{}", key), &values[0]);
           }
         }
         let com = com.output().unwrap_or_else(|e| panic!("process {} failed: {}", &map["0"][0], e));
