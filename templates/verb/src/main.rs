@@ -8,7 +8,7 @@ fn main() {
   let lang = env_var("ENV_0").unwrap();
 
   let data = match lang.as_str() {
-    "la-verb" => latina(&word),
+    "la-verb" => unimplemented!(), //latina(&word),
     u => panic!("unsupported: {}", u),
   };
 
@@ -40,16 +40,37 @@ struct Conjugation {
   deponent: bool,
   semi_deponent: bool,
 
-  perfect_stem: Option<String>,
-  supine_stem: Option<String>,
+  infect_stem: Vec<String>,
+  perfect_stem: Vec<String>,
+  supine_stem: Vec<String>,
 
   // ToDo: no pass links in parameters in widictor
-  prefix: Option<String>, // all if !passive_prefix
-  passive_prefix: Option<String>,
-  suffix: Option<String>, // all if !passive_suffix
-  passive_suffix: Option<String>,
 
-  // todo: table parts?
+  table_generator: Vec<bool>,
+
+  tags: HashSet<String>,
+}
+
+impl Conjugation {
+  fn new(conj: ConjugationType, lemma: &str) -> Self {
+    let mut table_generator = Vec::with_capacity(<usize as TableContext>::max());
+    for _ in 0..<usize as TableContext>::max() {
+      table_generator.push(true);
+    }
+    let lemma = lemma.to_owned();
+    Self {
+      conj,
+      lemma,
+      iv: false,
+      deponent: false,
+      semi_deponent: false,
+      infect_stem: Vec::new(),
+      perfect_stem: Vec::new(),
+      supine_stem: Vec::new(),
+      table_generator,
+      tags: HashSet::new(),
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -58,512 +79,326 @@ enum ConjugationType {
   Irreg(Vec<String>),
 }
 
-impl Declension {
-  fn encode(&self) -> (String, HashSet<String>) {
-    let mut tags = HashSet::new();
+// TODO: suffix/prefix = subwords and no conjugation and tags
+
+impl Conjugation {
+  fn finish(mut self) -> Self {
+    if self.semi_deponent || self.deponent {
+      self.supine_stem = self.perfect_stem;
+      self.perfect_stem = Vec::new();
+    }
+
+    if let Some(supine) = self.supine_stem.get(0) {
+      self.supine_stem = supine.split('/').map(|v| v.to_owned()).collect();
+    }
+    if let Some(perfect) = self.perfect_stem.get(0) {
+      self.perfect_stem = perfect.split('/').map(|v| v.to_owned()).collect();
+    }
     
-    (match self {
-      Self::D1 { abus, greek, ma, me, loc, am, plural, single } => {
-        tags.insert("declension_1".to_owned());
-        if *abus { tags.insert("d1_abus".to_owned()); }
-        if *greek { tags.insert("greek".to_owned()); }
-        if *ma { tags.insert("d1_ma".to_owned()); }
-        if *me { tags.insert("d1_me".to_owned()); }
-        if *loc { tags.insert("loc".to_owned()); }
-        if *am { tags.insert("d1_am".to_owned()); }
-        "1"
-      },
-      Self::D2 { neuter, greek, ius, er, voci, ium, loc, us, plural, single } => {
-        tags.insert("declension_2".to_owned());
-        if *ius { tags.insert("d2_ius".to_owned()); }
-        if *er { tags.insert("d2_er".to_owned()); }
-        if *voci { tags.insert("d2_voci".to_owned()); }
-        if *ium { tags.insert("d2_ium".to_owned()); }
-        if *us { tags.insert("d2_us".to_owned()); }
-        if *loc { tags.insert("loc".to_owned()); }
-        if *neuter { tags.insert("neuter".to_owned()); }
-        if *greek { tags.insert("greek".to_owned()); }
-        "2"
-      },
-      Self::D3 { neuter, i, pure, ignis, navis, loc, plural, acc_im, acc_im_in, acc_im_in_em, acc_im_em, acc_im_occ_em, acc_em_im, abl_i, abl_i_e, abl_e_i, abl_e_occ_i, single } => {
-        tags.insert("declension_3".to_owned());
-        if *i { tags.insert("d3_i".to_owned()); }
-        if *pure { tags.insert("d3_pure".to_owned()); }
-        if *ignis { tags.insert("d3_ignis".to_owned()); }
-        if *navis { tags.insert("d3_navis".to_owned()); }
-        if *acc_im { tags.insert("d3_acc_im".to_owned()); }
-        if *acc_im_in { tags.insert("d3_acc_im_in".to_owned()); }
-        if *acc_im_in_em { tags.insert("d3_acc_im_in_em".to_owned()); }
-        if *acc_im_em { tags.insert("d3_acc_im_em".to_owned()); }
-        if *acc_im_occ_em { tags.insert("d3_acc_im_occ_em".to_owned()); }
-        if *acc_em_im { tags.insert("d3_acc_em_im".to_owned()); }
-        if *abl_i { tags.insert("d3_abl_i".to_owned()); }
-        if *abl_i_e { tags.insert("d3_abl_i_e".to_owned()); }
-        if *abl_e_i { tags.insert("d3_abl_e_i".to_owned()); }
-        if *abl_e_occ_i { tags.insert("d3_abl_e_occ_i".to_owned()); }
-        if *neuter { tags.insert("neuter".to_owned()); }
-        if *loc { tags.insert("loc".to_owned()); }
-        if *plural { tags.insert("plural".to_owned()); }
-        "3"
-      },
-      Self::D4 { neuter, greek, plural, single } => {
-        tags.insert("declension_4".to_owned());
-        if *neuter { tags.insert("neuter".to_owned()); }
-        if *greek { tags.insert("greek".to_owned()); }
-        "4"
-      },
-      Self::D5 { ies, plural, single } => {
-        tags.insert("declension_5".to_owned());
-        if *ies { tags.insert("d5_ies".to_owned()); }
-        "5"
-      },
-      Self::Indecl {} => {
-        "indecl"
-      },
-      Self::Irreg {} => {
-        "irreg"
-      },
-    }.to_owned(), tags)
-    
-  }
-
-  fn d1() -> Self {
-    Self::D1 {
-      abus: false,
-      greek: false,
-      ma: false,
-      me: false,
-      loc: false,
-      am: false,
-      plural: false,
-      single: false,
-    }
-  }
-
-  fn d2() -> Self {
-    Self::D2 {
-      neuter: false,
-      er: false,
-      greek: false,
-      ius: false,
-      voci: false,
-      ium: false,
-      loc: false,
-      us: false,
-      plural: false,
-      single: false,
-    }
-  }
-  
-  fn d3() -> Self {
-    Self::D3 {
-      neuter: false,
-      i: false,
-      pure: false,
-      ignis: false,
-      navis: false,
-      loc: false,
-      plural: false,
-      acc_im: false,
-      acc_im_in: false,
-      acc_im_in_em: false,
-      acc_im_em: false,
-      acc_im_occ_em: false,
-      acc_em_im: false,
-      abl_i: false,
-      abl_i_e: false,
-      abl_e_i: false,
-      abl_e_occ_i: false,
-      single: false,
-    }
-  }
-
-  fn d4() -> Self {
-    Self::D4 {
-      neuter: false,
-      greek: false,
-      plural: false,
-      single: false,
-    }
-  }
-
-  fn d5() -> Self {
-    Self::D5 {
-      ies: false,
-      plural: false,
-      single: false,
-    }
-  }
-
-  fn table(&self, lemma: &str, stem: &str) -> HashMap<Case, String> {
-    let mut map = HashMap::new();
-    let from_stem_or_lemma = |endings: Vec<&str>| -> String {
-      if endings.is_empty() {
-        lemma.to_owned()
-      } else {
-        let mut s = String::new();
-        for ending in endings {
-          s += &format!("{}{}/", stem, ending);
+    let (auto_infect_stem, auto_perfect_stem, auto_supine_stem) = match self.conj {
+      ConjugationType::C1 => {
+        let stem = self.lemma.strip_suffix("ō");
+        if let Some(stem) = stem {
+          let perf = vec![format!("{}āv", stem)];
+          if self.iv { panic!("iv?"); }
+          let sup = vec![format!("{}āt", stem)];
+          (vec![stem.to_owned()], perf, sup)
+        } else {
+          (Vec::new(), Vec::new(), Vec::new())
         }
-        s.pop();
-        s
+      },
+      ConjugationType::C2 => {
+        let stem = self.lemma.strip_suffix("eō");
+        if let Some(stem) = stem {
+          let perf = vec![format!("{}uī", stem)];
+          if self.iv { panic!("iv?"); }
+          let sup = vec![format!("{}it", stem)];
+          (vec![stem.to_owned()], perf, sup)
+        } else {
+          (Vec::new(), Vec::new(), Vec::new())
+        }
+      },
+      ConjugationType::C4 => {
+        let stem = self.lemma.strip_suffix("iō");
+        if let Some(stem) = stem {
+          let mut perf = vec![format!("{}īv", stem)];
+          if self.iv { perf.push(format!("{}ī", stem)); }
+          let sup = vec![format!("{}īt", stem)];
+          (vec![stem.to_owned()], perf, sup)
+        } else {
+          (Vec::new(), Vec::new(), Vec::new())
+        }
+      },
+      _ => (Vec::new(), Vec::new(), Vec::new()),
+    };
+    if self.infect_stem.is_empty() {
+      self.infect_stem = auto_infect_stem;
+    }
+    if self.perfect_stem.is_empty() {
+      self.perfect_stem = auto_perfect_stem;
+    }
+    if self.supine_stem.is_empty() {
+      self.supine_stem = auto_supine_stem;
+    }
+
+    self
+  }
+
+  fn nopass(&mut self) {
+    for (i, val) in self.table_generator.iter_mut().enumerate() {
+      if i.passive() {
+        *val = false;
+      }
+    }
+    self.tags.insert("nopass".to_string());
+  }
+
+  fn gen_table(&self) -> HashMap<String, String> {
+    let gen_x = |stem: &[String], suffix: &str, end: &[&str]| -> String {
+      let mut out = String::new();
+      for s in stem {
+        for e in end {
+          out += &format!("{}{}{}/", s, suffix, e);
+        }
+      }
+      if !out.is_empty() { out.pop(); out } else { "—".to_owned() }
+    };
+
+    let gen_indicative = {
+      let gen_infect_end = |voice: Voice, tantum: Tantum, person: Person, time: Time| -> Vec<&'static str> {
+        match (voice, tantum, person, time) {
+          (Voice::Active, Tantum::Singular, Person::First, Time::Present)     => vec!["ō"],
+          (Voice::Active, Tantum::Singular, Person::First, Time::Imperfect)   => vec!["am"],
+          (Voice::Active, Tantum::Singular, Person::First, Time::Future)      => vec!["ō"],
+          (Voice::Active, Tantum::Singular, Person::Second, Time::Present)    => vec!["ās"],
+          (Voice::Active, Tantum::Singular, Person::Second, Time::Imperfect)  => vec!["ās"],
+          (Voice::Active, Tantum::Singular, Person::Second, Time::Future)     => vec!["is"],
+          (Voice::Active, Tantum::Singular, Person::Third, Time::Present)     => vec!["at"],
+          (Voice::Active, Tantum::Singular, Person::Third, Time::Imperfect)   => vec!["at"],
+          (Voice::Active, Tantum::Singular, Person::Third, Time::Future)      => vec!["it"],
+          (Voice::Active, Tantum::Plural, Person::First, Time::Present)       => vec!["āmus"],
+          (Voice::Active, Tantum::Plural, Person::First, Time::Imperfect)     => vec!["āmus"],
+          (Voice::Active, Tantum::Plural, Person::First, Time::Future)        => vec!["imus"],
+          (Voice::Active, Tantum::Plural, Person::Second, Time::Present)      => vec!["ātis"],
+          (Voice::Active, Tantum::Plural, Person::Second, Time::Imperfect)    => vec!["ātis"],
+          (Voice::Active, Tantum::Plural, Person::Second, Time::Future)       => vec!["itis"],
+          (Voice::Active, Tantum::Plural, Person::Third, Time::Present)       => vec!["ant"],
+          (Voice::Active, Tantum::Plural, Person::Third, Time::Imperfect)     => vec!["ant"],
+          (Voice::Active, Tantum::Plural, Person::Third, Time::Future)        => vec!["unt"],
+          (Voice::Passive, Tantum::Singular, Person::First, Time::Present)    => vec!["or"],
+          (Voice::Passive, Tantum::Singular, Person::First, Time::Imperfect)  => vec!["ar"],
+          (Voice::Passive, Tantum::Singular, Person::First, Time::Future)     => vec!["or"],
+          (Voice::Passive, Tantum::Singular, Person::Second, Time::Present)   => vec!["āris","āre"],
+          (Voice::Passive, Tantum::Singular, Person::Second, Time::Imperfect) => vec!["āris","āre"],
+          (Voice::Passive, Tantum::Singular, Person::Second, Time::Future)    => vec!["eris","ere"],
+          (Voice::Passive, Tantum::Singular, Person::Third, Time::Present)    => vec!["ātur"],
+          (Voice::Passive, Tantum::Singular, Person::Third, Time::Imperfect)  => vec!["ātur"],
+          (Voice::Passive, Tantum::Singular, Person::Third, Time::Future)     => vec!["itur"],
+          (Voice::Passive, Tantum::Plural, Person::First, Time::Present)      => vec!["āmur"],
+          (Voice::Passive, Tantum::Plural, Person::First, Time::Imperfect)    => vec!["āmur"],
+          (Voice::Passive, Tantum::Plural, Person::First, Time::Future)       => vec!["imur"],
+          (Voice::Passive, Tantum::Plural, Person::Second, Time::Present)     => vec!["āmini"],
+          (Voice::Passive, Tantum::Plural, Person::Second, Time::Imperfect)   => vec!["āmini"],
+          (Voice::Passive, Tantum::Plural, Person::Second, Time::Future)      => vec!["imini"],
+          (Voice::Passive, Tantum::Plural, Person::Third, Time::Present)      => vec!["antur"],
+          (Voice::Passive, Tantum::Plural, Person::Third, Time::Imperfect)    => vec!["antur"],
+          (Voice::Passive, Tantum::Plural, Person::Third, Time::Future)       => vec!["untur"],
+          _ => unreachable!(),
+        }
+      };
+      let gen_perfect_active_end = |tantum: Tantum, person: Person, time: Time| -> Vec<&'static str> {
+        match (tantum, person, time) {
+          (Tantum::Singular, Person::First, Time::Perfect)        => vec!["ī"],
+          (Tantum::Singular, Person::First, Time::Pluperfect)     => vec!["am"],
+          (Tantum::Singular, Person::First, Time::FuturePerfect)  => vec!["ō"],
+          (Tantum::Singular, Person::Second, Time::Perfect)       => vec!["istī"],
+          (Tantum::Singular, Person::Second, Time::Pluperfect)    => vec!["ās"],
+          (Tantum::Singular, Person::Second, Time::FuturePerfect) => vec!["īs"],
+          (Tantum::Singular, Person::Third, Time::Perfect)        => vec!["it"],
+          (Tantum::Singular, Person::Third, Time::Pluperfect)     => vec!["at"],
+          (Tantum::Singular, Person::Third, Time::FuturePerfect)  => vec!["it"],
+          (Tantum::Plural, Person::First, Time::Perfect)          => vec!["imus"],
+          (Tantum::Plural, Person::First, Time::Pluperfect)       => vec!["āmus"],
+          (Tantum::Plural, Person::First, Time::FuturePerfect)    => vec!["īmus"],
+          (Tantum::Plural, Person::Second, Time::Perfect)         => vec!["istis"],
+          (Tantum::Plural, Person::Second, Time::Pluperfect)      => vec!["ātis"],
+          (Tantum::Plural, Person::Second, Time::FuturePerfect)   => vec!["ītis"],
+          (Tantum::Plural, Person::Third, Time::Perfect)          => vec!["ērunt","ēre"],
+          (Tantum::Plural, Person::Third, Time::Pluperfect)       => vec!["ant"],
+          (Tantum::Plural, Person::Third, Time::FuturePerfect)    => vec!["int"],
+          _ => unreachable!(),
+        }
+      };
+      let gen_perfect_passive_end = |tantum: Tantum, person: Person, time: Time| -> Vec<&'static str> {
+        match (tantum, person, time) {
+          (Tantum::Singular, Person::First, Time::Perfect)        => vec!["us sum"],
+          (Tantum::Singular, Person::First, Time::Pluperfect)     => vec!["us eram"],
+          (Tantum::Singular, Person::First, Time::FuturePerfect)  => vec!["us erō"],
+          (Tantum::Singular, Person::Second, Time::Perfect)       => vec!["us es"],
+          (Tantum::Singular, Person::Second, Time::Pluperfect)    => vec!["us erās"],
+          (Tantum::Singular, Person::Second, Time::FuturePerfect) => vec!["us eris","us ere"],
+          (Tantum::Singular, Person::Third, Time::Perfect)        => vec!["us est"],
+          (Tantum::Singular, Person::Third, Time::Pluperfect)     => vec!["us erat"],
+          (Tantum::Singular, Person::Third, Time::FuturePerfect)  => vec!["us erit"],
+          (Tantum::Plural, Person::First, Time::Perfect)          => vec!["ī sumus"],
+          (Tantum::Plural, Person::First, Time::Pluperfect)       => vec!["ī erāmus"],
+          (Tantum::Plural, Person::First, Time::FuturePerfect)    => vec!["ī erimus"],
+          (Tantum::Plural, Person::Second, Time::Perfect)         => vec!["ī estis"],
+          (Tantum::Plural, Person::Second, Time::Pluperfect)      => vec!["ī erātis"],
+          (Tantum::Plural, Person::Second, Time::FuturePerfect)   => vec!["ī eritis"],
+          (Tantum::Plural, Person::Third, Time::Perfect)          => vec!["ī sunt"],
+          (Tantum::Plural, Person::Third, Time::Pluperfect)       => vec!["ī erant"],
+          (Tantum::Plural, Person::Third, Time::FuturePerfect)    => vec!["ī erunt"],
+          _ => unreachable!(),
+        }
+      };
+      let gen_suffix = |time: Time| -> &'static str {
+        match time {
+          Time::Present => "",
+          Time::Imperfect => "āb",
+          Time::Future => "āb",
+          Time::Perfect => "",
+          Time::Pluperfect => "er",
+          Time::FuturePerfect => "er",
+        }
+      };
+
+      let gen_infect = |voice: Voice, tantum: Tantum, person: Person, time: Time| -> String {
+        let stem = self.infect_stem.as_slice();
+        let suffix = gen_suffix(time);
+        let end = gen_infect_end(voice, tantum, person, time);
+        gen_x(stem, suffix, &end)
+      };
+      let gen_perfect = |voice: Voice, tantum: Tantum, person: Person, time: Time| -> String {
+        let (stem, end) = match voice {
+          Voice::Active => (self.perfect_stem.as_slice(), gen_perfect_active_end(tantum, person, time)),
+          Voice::Passive => (self.supine_stem.as_slice(), gen_perfect_passive_end(tantum, person, time)),
+        };
+        let suffix = gen_suffix(time);
+        gen_x(stem, suffix, &end)
+      };
+
+      |voice: Voice, tantum: Tantum, person: Person, time: Time| -> String {
+        match time {
+          Time::Present | Time::Imperfect | Time::Future => gen_infect(voice, tantum, person, time),
+          Time::Perfect | Time::Pluperfect | Time::FuturePerfect => gen_perfect(voice, tantum, person, time),
+        }
       }
     };
 
-    match self {
-      Self::D1 { abus, greek, ma, me, loc, am, plural, single } => {
-        if !*plural {
-          map.insert(Case::GenSg, from_stem_or_lemma(match
-            greek {
-              false => vec!["ae"],
-              true  => vec!["ēs"],
-          }));
-          map.insert(Case::DatSg, from_stem_or_lemma(vec!["ae"])); 
-          map.insert(Case::AccSg, from_stem_or_lemma(match
-            (  greek, ma,    me,    am) {
-              (false, false, false, false) => vec!["am"],
-              (true,  false, false, false) => vec!["ēn"],
-              (true,  true,  false, false) => vec!["ān"],
-              (true,  false, true,  false) => vec!["ēn"],
-              (false, false, false, true ) => vec!["ām"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::AblSg, from_stem_or_lemma(match
-            (  greek, me) {
-              (false, false) => vec!["ā"],
-              (true,  false) => vec!["ē"],
-              (true,  true ) => vec!["ē"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::VocSg, from_stem_or_lemma(match
-            (  greek, ma,    me,    am) {
-              (false, false, false, false) => vec!["a"],
-              (true,  false, false, false) => vec!["ē"],
-              (true,  true,  false, false) => vec!["ā"],
-              (true,  false, true,  false) => vec!["ē"],
-              (true,  false, false, true ) => vec!["ām"],
-              _ => panic!("bad subtypes"),
-          }));
-          if *loc {
-            map.insert(Case::LocSg, from_stem_or_lemma(vec!["ae"]));
-          }
+    let gen_subjunctive = {
+      let gen_infect_end = |voice: Voice, tantum: Tantum, person: Person, time: Time| -> Vec<&'static str> {
+        match (voice, tantum, person, time) {
+          (Voice::Active, Tantum::Singular, Person::First, Time::Present)     => vec!["em"],
+          (Voice::Active, Tantum::Singular, Person::First, Time::Imperfect)   => vec!["em"],
+          (Voice::Active, Tantum::Singular, Person::Second, Time::Present)    => vec!["ēs"],
+          (Voice::Active, Tantum::Singular, Person::Second, Time::Imperfect)  => vec!["ēs"],
+          (Voice::Active, Tantum::Singular, Person::Third, Time::Present)     => vec!["et"],
+          (Voice::Active, Tantum::Singular, Person::Third, Time::Imperfect)   => vec!["et"],
+          (Voice::Active, Tantum::Plural, Person::First, Time::Present)       => vec!["ēmus"],
+          (Voice::Active, Tantum::Plural, Person::First, Time::Imperfect)     => vec!["ēmus"],
+          (Voice::Active, Tantum::Plural, Person::Second, Time::Present)      => vec!["ētis"],
+          (Voice::Active, Tantum::Plural, Person::Second, Time::Imperfect)    => vec!["ētis"],
+          (Voice::Active, Tantum::Plural, Person::Third, Time::Present)       => vec!["ent"],
+          (Voice::Active, Tantum::Plural, Person::Third, Time::Imperfect)     => vec!["ent"],
+          (Voice::Passive, Tantum::Singular, Person::First, Time::Present)    => vec!["er"],
+          (Voice::Passive, Tantum::Singular, Person::First, Time::Imperfect)  => vec!["er"],
+          (Voice::Passive, Tantum::Singular, Person::Second, Time::Present)   => vec!["ēris","ēre"],
+          (Voice::Passive, Tantum::Singular, Person::Second, Time::Imperfect) => vec!["ēris","ēre"],
+          (Voice::Passive, Tantum::Singular, Person::Third, Time::Present)    => vec!["ētur"],
+          (Voice::Passive, Tantum::Singular, Person::Third, Time::Imperfect)  => vec!["ētur"],
+          (Voice::Passive, Tantum::Plural, Person::First, Time::Present)      => vec!["ēmur"],
+          (Voice::Passive, Tantum::Plural, Person::First, Time::Imperfect)    => vec!["ēmur"],
+          (Voice::Passive, Tantum::Plural, Person::Second, Time::Present)     => vec!["ēmini"],
+          (Voice::Passive, Tantum::Plural, Person::Second, Time::Imperfect)   => vec!["ēmini"],
+          (Voice::Passive, Tantum::Plural, Person::Third, Time::Present)      => vec!["entur"],
+          (Voice::Passive, Tantum::Plural, Person::Third, Time::Imperfect)    => vec!["entur"],
+          _ => unreachable!(),
         }
-        if !*single {
-          map.insert(Case::NomPl, from_stem_or_lemma(vec!["ae"]));
-          map.insert(Case::GenPl, from_stem_or_lemma(vec!["arum"]));
-          map.insert(Case::DatPl, from_stem_or_lemma(match
-            abus {
-              true  => vec!["ābus"],
-              false => vec!["īs"],
-          }));
-          map.insert(Case::AccPl, from_stem_or_lemma(vec!["ās"]));
-          map.insert(Case::AblPl, from_stem_or_lemma(match
-            abus {
-              true  => vec!["ābus"],
-              false => vec!["īs"],
-          }));
-          map.insert(Case::VocPl, from_stem_or_lemma(vec!["ae"]));
-          if *loc {
-            map.insert(Case::LocPl, from_stem_or_lemma(vec!["īs"]));
-          }
+      };
+      let gen_perfect_active_end = |tantum: Tantum, person: Person, time: Time| -> Vec<&'static str> {
+        match (tantum, person, time) {
+          (Tantum::Singular, Person::First, Time::Perfect)        => vec!["im"],
+          (Tantum::Singular, Person::First, Time::Pluperfect)     => vec!["issem"],
+          (Tantum::Singular, Person::Second, Time::Perfect)       => vec!["īs"],
+          (Tantum::Singular, Person::Second, Time::Pluperfect)    => vec!["issēs"],
+          (Tantum::Singular, Person::Third, Time::Perfect)        => vec!["it"],
+          (Tantum::Singular, Person::Third, Time::Pluperfect)     => vec!["isset"],
+          (Tantum::Plural, Person::First, Time::Perfect)          => vec!["īmus"],
+          (Tantum::Plural, Person::First, Time::Pluperfect)       => vec!["issēmus"],
+          (Tantum::Plural, Person::Second, Time::Perfect)         => vec!["ītis"],
+          (Tantum::Plural, Person::Second, Time::Pluperfect)      => vec!["issētis"],
+          (Tantum::Plural, Person::Third, Time::Perfect)          => vec!["int"],
+          (Tantum::Plural, Person::Third, Time::Pluperfect)       => vec!["issent"],
+          _ => unreachable!(),
         }
-        if *plural {
-          map.insert(Case::NomPl, from_stem_or_lemma(vec![]));
-        } else {
-          map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
+      };
+      let gen_perfect_passive_end = |tantum: Tantum, person: Person, time: Time| -> Vec<&'static str> {
+        match (tantum, person, time) {
+          (Tantum::Singular, Person::First, Time::Perfect)        => vec!["us sim"],
+          (Tantum::Singular, Person::First, Time::Pluperfect)     => vec!["us essem"],
+          (Tantum::Singular, Person::Second, Time::Perfect)       => vec!["us sīs"],
+          (Tantum::Singular, Person::Second, Time::Pluperfect)    => vec!["us essēs"],
+          (Tantum::Singular, Person::Third, Time::Perfect)        => vec!["us sit"],
+          (Tantum::Singular, Person::Third, Time::Pluperfect)     => vec!["us esset"],
+          (Tantum::Plural, Person::First, Time::Perfect)          => vec!["ī sīmus"],
+          (Tantum::Plural, Person::First, Time::Pluperfect)       => vec!["ī essēmus"],
+          (Tantum::Plural, Person::Second, Time::Perfect)         => vec!["ī sītis"],
+          (Tantum::Plural, Person::Second, Time::Pluperfect)      => vec!["ī essētis"],
+          (Tantum::Plural, Person::Third, Time::Perfect)          => vec!["ī sint"],
+          (Tantum::Plural, Person::Third, Time::Pluperfect)       => vec!["ī essent"],
+          _ => unreachable!(),
         }
-      },
-      Self::D2 { neuter, er, greek, ius, voci, ium, loc, us, plural, single } => {
-        if !*plural {
-          map.insert(Case::GenSg, from_stem_or_lemma(vec!["ī"]));
-          map.insert(Case::DatSg, from_stem_or_lemma(vec!["ō"]));
-          map.insert(Case::AccSg, from_stem_or_lemma(match
-            (  neuter,er,    greek, ius,   voci,  ium,   loc,   us) {
-              (false, false, false, false, false, false, false, false) => vec!["um"],
-              (true,  false, false, false, false, false, false, false) => vec!["um"],
-              (false, true,  false, false, false, false, false, false) => vec!["um"],
-              (false, false, true,  false, false, false, false, false) => vec!["on"],
-              (true,  false, true,  false, false, false, false, false) => vec!["on"],
-              (false, false, false, true,  false, false, false, false) => vec!["um"],
-              (false, false, false, true,  true,  false, false, false) => vec!["um"],
-              (true,  false, false, false, false, true,  false, false) => vec!["um"],
-              (false, false, false, false, false, false, true,  false) => vec!["um"],
-              (true,  false, false, false, false, false, true,  false) => vec!["um"],
-              (true,  false, false, false, false, false, false, true ) => vec!["us"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::AblSg, from_stem_or_lemma(vec!["ō"]));
-          map.insert(Case::VocSg, from_stem_or_lemma(match
-            (  neuter,er,    greek, ius,   voci,  ium,   loc,   us) {
-              (false, false, false, false, false, false, false, false) => vec!["e"],
-              (true,  false, false, false, false, false, false, false) => vec!["um"],
-              (false, true,  false, false, false, false, false, false) => vec![],
-              (false, false, true,  false, false, false, false, false) => vec!["e"],
-              (true,  false, true,  false, false, false, false, false) => vec!["on"],
-              (false, false, false, true,  false, false, false, false) => vec!["e"],
-              (false, false, false, true,  true,  false, false, false) => vec!["ī"],
-              (true,  false, false, false, false, true,  false, false) => vec!["um"],
-              (false, false, false, false, false, false, true,  false) => vec!["us"],
-              (true,  false, false, false, false, false, true,  false) => vec!["um"],
-              (true,  false, false, false, false, false, false, true ) => vec!["us"],
-              _ => panic!("bad subtypes"),
-          }));
-          if *loc {
-            map.insert(Case::LocSg, from_stem_or_lemma(vec!["ī"]));
-          }
+      };
+      // TODO: no supine suffix
+      let gen_suffix = |time: Time| -> &'static str {
+        match time {
+          Time::Present => "",
+          Time::Imperfect => "ār",
+          Time::Perfect => "er",
+          Time::Pluperfect => "iss",
+          _ => unreachable!(),
         }
-        if !(*neuter && *us) && !*single {
-          map.insert(Case::NomPl, from_stem_or_lemma(match
-            (  neuter,er,    greek, ius,   voci,  ium,   loc) {
-              (false, false, false, false, false, false, false) => vec!["ī"],
-              (true,  false, false, false, false, false, false) => vec!["a"],
-              (false, true,  false, false, false, false, false) => vec!["ī"],
-              (false, false, true,  false, false, false, false) => vec!["ī"],
-              (true,  false, true,  false, false, false, false) => vec!["a"],
-              (false, false, false, true,  false, false, false) => vec!["ī"],
-              (false, false, false, true,  true,  false, false) => vec!["ī"],
-              (true,  false, false, false, false, true,  false) => vec!["a"],
-              (false, false, false, false, false, false, true ) => vec!["ī"],
-              (true,  false, false, false, false, false, true ) => vec!["a"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::GenPl, from_stem_or_lemma(vec!["ōrum"]));
-          map.insert(Case::DatPl, from_stem_or_lemma(vec!["īs"]));
-          map.insert(Case::AccPl, from_stem_or_lemma(match
-            (  neuter,er,    greek, ius,   voci,  ium,   loc) {
-              (false, false, false, false, false, false, false) => vec!["ōs"],
-              (true,  false, false, false, false, false, false) => vec!["a"],
-              (false, true,  false, false, false, false, false) => vec!["ōs"],
-              (false, false, true,  false, false, false, false) => vec!["ōs"],
-              (true,  false, true,  false, false, false, false) => vec!["a"],
-              (false, false, false, true,  false, false, false) => vec!["ōs"],
-              (false, false, false, true,  true,  false, false) => vec!["ōs"],
-              (true,  false, false, false, false, true,  false) => vec!["a"],
-              (false, false, false, false, false, false, true ) => vec!["ōs"],
-              (true,  false, false, false, false, false, true ) => vec!["a"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::VocPl, from_stem_or_lemma(match
-            (  neuter,er,    greek, ius,   voci,  ium,   loc) {
-              (false, false, false, false, false, false, false) => vec!["ī"],
-              (true,  false, false, false, false, false, false) => vec!["a"],
-              (false, true,  false, false, false, false, false) => vec!["ī"],
-              (false, false, true,  false, false, false, false) => vec!["ī"],
-              (true,  false, true,  false, false, false, false) => vec!["a"],
-              (false, false, false, true,  false, false, false) => vec!["ī"],
-              (false, false, false, true,  true,  false, false) => vec!["ī"],
-              (true,  false, false, false, false, true,  false) => vec!["a"],
-              (false, false, false, false, false, false, true ) => vec!["ī"],
-              (true,  false, false, false, false, false, true ) => vec!["a"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::AblPl, from_stem_or_lemma(vec!["īs"]));
-          if *loc {
-            map.insert(Case::LocPl, from_stem_or_lemma(vec!["īs"]));
-          }
-        }
-        if *plural {
-          map.insert(Case::NomPl, from_stem_or_lemma(vec![]));
-        } else {
-          map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
-        }
-      },
-      Self::D3 { neuter, i, pure, ignis, navis, loc, plural, acc_im, acc_im_in, acc_im_in_em, acc_im_em, acc_im_occ_em, acc_em_im, abl_i, abl_i_e, abl_e_i, abl_e_occ_i, single } => {
-        if !*plural {
-          map.insert(Case::GenSg, from_stem_or_lemma(vec!["is"]));
-          map.insert(Case::DatSg, from_stem_or_lemma(vec!["ī"]));
-          map.insert(Case::AccSg, from_stem_or_lemma(match
-            (  neuter,i,     pure,  ignis, navis, loc,  acc_im, acc_im_in, acc_im_in_em, acc_im_em, acc_im_occ_em, acc_em_im) {
-              (false, false, false, false, false, false,false,  false,     false,        false,     false,         false,     ) => vec!["em"],
-              (true,  false, false, false, false, false,false,  false,     false,        false,     false,         false,     ) => vec![],
-              (false, true,  false, false, false, false,false,  false,     false,        false,     false,         false,     ) => vec!["em"],
-              (true,  true,  false, false, false, false,false,  false,     false,        false,     false,         false,     ) => vec![],
-              (true,  true,  true,  false, false, false,false,  false,     false,        false,     false,         false,     ) => vec![],
-              (false, true,  false, true,  false, false,false,  false,     false,        false,     false,         false,     ) => vec!["em"],
-              (false, true,  false, false, true,  false,false,  false,     false,        false,     false,         false,     ) => vec!["em", "im"],
-              (false, false, false, false, false, true ,false,  false,     false,        false,     false,         false,     ) => vec!["em"],
-              (_,     true,  _,     _,     _,     _,    true,   false,     false,        false,     false,         false,     ) => vec!["im"],
-              (_,     true,  _,     _,     _,     _,    false,  true,      false,        false,     false,         false,     ) => vec!["im", "in"],
-              (_,     true,  _,     _,     _,     _,    false,  false,     true,         false,     false,         false,     ) => vec!["im", "in", "em"],
-              (_,     true,  _,     _,     _,     _,    false,  false,     false,        true,      false,         false,     ) => vec!["im", "em"],
-              (_,     true,  _,     _,     _,     _,    false,  false,     false,        false,     true,          false,     ) => vec!["im", "em"],
-              (_,     true,  _,     _,     _,     _,    false,  false,     false,        false,     false,         true,      ) => vec!["em", "im"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::AblSg, from_stem_or_lemma(match
-            (  neuter,i,     pure,  ignis, navis, loc,  abl_i, abl_i_e, abl_e_i, abl_e_occ_i) {
-              (false, false, false, false, false, false,false, false,   false,   false        ) => vec!["e"],
-              (true,  false, false, false, false, false,false, false,   false,   false        ) => vec!["e"],
-              (false, true,  false, false, false, false,false, false,   false,   false        ) => vec!["e"],
-              (true,  true,  false, false, false, false,false, false,   false,   false        ) => vec!["e"],
-              (true,  true,  true,  false, false, false,false, false,   false,   false        ) => vec!["ī"],
-              (false, true,  false, true,  false, false,false, false,   false,   false        ) => vec!["ī", "e"],
-              (false, true,  false, false, true,  false,false, false,   false,   false        ) => vec!["ī", "e"],
-              (false, false, false, false, false, true ,false, false,   false,   false        ) => vec!["e"],
-              (_,     _,      _,     _,    _,     _,    true,  false,   false,   false        ) => vec!["ī"],
-              (_,     _,      _,     _,    _,     _,    false, true,    false,   false        ) => vec!["ī", "e"],
-              (_,     _,      _,     _,    _,     _,    false, false,   true,    false        ) => vec!["e", "ī"],
-              (_,     _,      _,     _,    _,     _,    false, false,   false,   true         ) => vec!["e", "ī"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::VocSg, from_stem_or_lemma(vec![]));
-          if *loc {
-            map.insert(Case::LocSg, from_stem_or_lemma(vec!["ī", "e"]));
-          }
-        }
-        if !*single {
-          map.insert(Case::NomPl, from_stem_or_lemma(match
-            (  neuter,i,     pure,  ignis, navis, loc,   plural) {
-              (false, false, false, false, false, false, false) => vec!["ēs"],
-              (true,  false, false, false, false, false, false) => vec!["a"],
-              (false, true,  false, false, false, false, false) => vec!["ēs"],
-              (true,  true,  false, false, false, false, false) => vec!["a"],
-              (true,  true,  true,  false, false, false, false) => vec!["ia"],
-              (false, true,  false, true,  false, false, false) => vec!["ēs"],
-              (false, true,  false, false, true,  false, false) => vec!["ēs"],
-              (false, false, false, false, false, true,  true ) => vec!["es"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::GenPl, from_stem_or_lemma(match
-            (  neuter,i,     pure,  ignis, navis, loc,   plural) {
-              (false, false, false, false, false, false, false) => vec!["um"],
-              (true,  false, false, false, false, false, false) => vec!["um"],
-              (false, true,  false, false, false, false, false) => vec!["ium"],
-              (true,  true,  false, false, false, false, false) => vec!["ium", "um"],
-              (true,  true,  true,  false, false, false, false) => vec!["ium"],
-              (false, true,  false, true,  false, false, false) => vec!["ium"],
-              (false, true,  false, false, true,  false, false) => vec!["ium"],
-              (false, false, false, false, false, true,  true ) => vec!["ium"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::DatPl, from_stem_or_lemma(vec!["ibus"]));
-          map.insert(Case::AccPl, from_stem_or_lemma(match
-            (  neuter,i,     pure,  ignis, navis, loc,   plural) {
-              (false, false, false, false, false, false, false) => vec!["ēs"],
-              (true,  false, false, false, false, false, false) => vec!["a"],
-              (false, true,  false, false, false, false, false) => vec!["ēs"],
-              (true,  true,  false, false, false, false, false) => vec!["a"],
-              (true,  true,  true,  false, false, false, false) => vec!["ia"],
-              (false, true,  false, true,  false, false, false) => vec!["ēs", "īs"],
-              (false, true,  false, false, true,  false, false) => vec!["ēs", "īs"],
-              (false, false, false, false, false, true,  true ) => vec!["es"],
-              _ => panic!("bad subtypes"),
-          }));
-          map.insert(Case::AblPl, from_stem_or_lemma(vec!["ibus"]));
-          map.insert(Case::VocPl, from_stem_or_lemma(match
-            (  neuter,i,     pure,  ignis, navis, loc,   plural) {
-              (false, false, false, false, false, false, false) => vec!["ēs"],
-              (true,  false, false, false, false, false, false) => vec!["a"],
-              (false, true,  false, false, false, false, false) => vec!["ēs"],
-              (true,  true,  false, false, false, false, false) => vec!["a"],
-              (true,  true,  true,  false, false, false, false) => vec!["ia"],
-              (false, true,  false, true,  false, false, false) => vec!["ēs"],
-              (false, true,  false, false, true,  false, false) => vec!["ēs"],
-              (false, false, false, false, false, true,  true ) => vec!["es"],
-              _ => panic!("bad subtypes"),
-          }));
-          if *loc {
-            map.insert(Case::LocPl, from_stem_or_lemma(vec!["ibus"]));
-          }
-        }
-        if *plural {
-          map.insert(Case::NomPl, from_stem_or_lemma(vec![]));
-        } else {
-          map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
-        }
-      },
-      Self::D4 { neuter, greek, plural, single } => {
-        match (neuter, greek) {
-          (false, false) => {
-            if !*plural {
-              map.insert(Case::GenSg, from_stem_or_lemma(vec!["ūs"]));
-              map.insert(Case::DatSg, from_stem_or_lemma(vec!["uī"]));
-              map.insert(Case::AccSg, from_stem_or_lemma(vec!["um"]));
-              map.insert(Case::AblSg, from_stem_or_lemma(vec!["ū"]));
-              map.insert(Case::VocSg, from_stem_or_lemma(vec!["us"]));
-            }
-            if !*single {
-              map.insert(Case::NomPl, from_stem_or_lemma(vec!["ūs"]));
-              map.insert(Case::GenPl, from_stem_or_lemma(vec!["uum"]));
-              map.insert(Case::DatPl, from_stem_or_lemma(vec!["ibus"]));
-              map.insert(Case::AccPl, from_stem_or_lemma(vec!["ūs"]));
-              map.insert(Case::AblPl, from_stem_or_lemma(vec!["ibus"]));
-              map.insert(Case::VocPl, from_stem_or_lemma(vec!["ūs"]));
-            }
-          },
-          (true, false) => {
-            if !*plural {
-              map.insert(Case::GenSg, from_stem_or_lemma(vec!["ūs", "ū"]));
-              map.insert(Case::DatSg, from_stem_or_lemma(vec!["ūī", "ū"]));
-              map.insert(Case::AccSg, from_stem_or_lemma(vec!["ū"]));
-              map.insert(Case::AblSg, from_stem_or_lemma(vec!["ū"]));
-              map.insert(Case::VocSg, from_stem_or_lemma(vec!["ū"]));
-            }
-            if !*single {
-              map.insert(Case::NomPl, from_stem_or_lemma(vec!["ua"]));
-              map.insert(Case::GenPl, from_stem_or_lemma(vec!["uum"]));
-              map.insert(Case::DatPl, from_stem_or_lemma(vec!["ibus"]));
-              map.insert(Case::AccPl, from_stem_or_lemma(vec!["ua"]));
-              map.insert(Case::AblPl, from_stem_or_lemma(vec!["ibus"]));
-              map.insert(Case::VocPl, from_stem_or_lemma(vec!["ua"]));
-            }
-          },
-          (false, true) => {
-            map.insert(Case::GenSg, from_stem_or_lemma(vec!["ūs"]));
-            map.insert(Case::DatSg, from_stem_or_lemma(vec!["ō"]));
-            map.insert(Case::AccSg, from_stem_or_lemma(vec!["ō"]));
-            map.insert(Case::AblSg, from_stem_or_lemma(vec!["ō"]));
-            map.insert(Case::VocSg, from_stem_or_lemma(vec!["ō"]));
-          },
-          _ => panic!("bad subtypes"),
-        }
-        if *plural {
-          map.insert(Case::NomPl, from_stem_or_lemma(vec![]));
-        } else {
-          map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
-        }
-      },
-      Self::D5 { ies, plural, single } => {
-        if !*plural {
-          map.insert(Case::GenSg, from_stem_or_lemma(match
-            ies {
-              true  => vec!["ēī"],
-              false => vec!["eī"],
-          }));
-          map.insert(Case::DatSg, from_stem_or_lemma(match
-            ies {
-              true  => vec!["ēī"],
-              false => vec!["eī"],
-          }));
-          map.insert(Case::AccSg, from_stem_or_lemma(vec!["em"]));
-          map.insert(Case::AblSg, from_stem_or_lemma(vec!["ē"]));
-          map.insert(Case::VocSg, from_stem_or_lemma(vec!["ēs"]));
-          map.insert(Case::LocSg, from_stem_or_lemma(vec!["ē"]));
-        }
-        if !*single {
-          map.insert(Case::NomPl, from_stem_or_lemma(vec!["ēs"]));
-          map.insert(Case::GenPl, from_stem_or_lemma(vec!["ērum"]));
-          map.insert(Case::DatPl, from_stem_or_lemma(vec!["ēbus"]));
-          map.insert(Case::AccPl, from_stem_or_lemma(vec!["ēs"]));
-          map.insert(Case::AblPl, from_stem_or_lemma(vec!["ēbus"]));
-          map.insert(Case::VocPl, from_stem_or_lemma(vec!["ēs"]));
-          map.insert(Case::LocPl, from_stem_or_lemma(vec!["ēbus"]));
-        }
-        if *plural {
-          map.insert(Case::NomPl, from_stem_or_lemma(vec![]));
-        } else {
-          map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
-        }
-      },
-      _ => {
-        map.insert(Case::NomSg, from_stem_or_lemma(vec![]));
-      },
-    }
+      };
 
-    map
+      let gen_infect = |voice: Voice, tantum: Tantum, person: Person, time: Time| -> String {
+        let stem = self.infect_stem.as_slice();
+        let suffix = gen_suffix(time);
+        let end = gen_infect_end(voice, tantum, person, time);
+        gen_x(stem, suffix, &end)
+      };
+      let gen_perfect = |voice: Voice, tantum: Tantum, person: Person, time: Time| -> String {
+        let (stem, end) = match voice {
+          Voice::Active => (self.perfect_stem.as_slice(), gen_perfect_active_end(tantum, person, time)),
+          Voice::Passive => (self.supine_stem.as_slice(), gen_perfect_passive_end(tantum, person, time)),
+        };
+        let suffix = gen_suffix(time);
+        gen_x(stem, suffix, &end)
+      };
+
+      |voice: Voice, tantum: Tantum, person: Person, time: Time| -> String {
+        match time {
+          Time::Present | Time::Imperfect | Time::Future => gen_infect(voice, tantum, person, time),
+          Time::Perfect | Time::Pluperfect | Time::FuturePerfect => gen_perfect(voice, tantum, person, time),
+        }
+      }
+    };
+
+    let mut out = HashMap::new();
+
+    for (id, generator) in self.table_generator.iter().enumerate() {
+      if !generator { continue; }
+      match id.category() {
+        Category::Indicative => {
+          out.insert(id.code(), gen_indicative(id.voice().unwrap(), id.tantum().unwrap(), id.person().unwrap(), id.time().unwrap()));
+        },
+      }
+    }
+    unimplemented!()
   }
 }
 
+/*
 fn latina(word: &str) -> TemplateText {
   let noun = if let Ok(one_lemma) = env_var("ENV_1") {
     Noun::new(word, one_lemma)
@@ -598,6 +433,7 @@ fn latina(word: &str) -> TemplateText {
     subwords,
   }
 }
+f*/
 
 // lemma stem declension
 fn parse_lemma(src: &str) -> (String, Option<String>, String) {
@@ -626,41 +462,352 @@ fn parse_declension(src: &str) -> (String, Vec<String>) {
   (iter.next().unwrap().to_string(), iter.map(|v| v.to_owned()).collect())
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-enum Case {
-  NomSg,
-  GenSg,
-  DatSg,
-  AccSg,
-  AblSg,
-  VocSg,
-  LocSg,
-  NomPl,
-  GenPl,
-  DatPl,
-  AccPl,
-  AblPl,
-  VocPl,
-  LocPl,
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Time {
+  Present,
+  Imperfect,
+  Future,
+  Perfect,
+  Pluperfect,
+  FuturePerfect,
+}
+impl Time {
+  fn code(self) -> &'static str {
+    match self {
+      Self::Future => "Fut",
+      Self::Imperfect => "Imperf",
+      Self::FuturePerfect => "FutPerf",
+      Self::Perfect => "Perf",
+      Self::Pluperfect => "Pluperf",
+      Self::Present => "Pres",
+    }
+  }
 }
 
-impl ToString for Case {
-  fn to_string(&self) -> String {
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Tantum {
+  Singular,
+  Plural,
+}
+impl Tantum {
+  fn code(self) -> &'static str {
     match self {
-      Self::NomSg => "nom.sg.".to_owned(),
-      Self::GenSg => "gen.sg.".to_owned(),
-      Self::DatSg => "dat.sg.".to_owned(),
-      Self::AccSg => "acc.sg.".to_owned(),
-      Self::AblSg => "abl.sg.".to_owned(),
-      Self::VocSg => "voc.sg.".to_owned(),
-      Self::LocSg => "loc.sg.".to_owned(),
-      Self::NomPl => "nom.pl.".to_owned(),
-      Self::GenPl => "gen.pl.".to_owned(),
-      Self::DatPl => "dat.pl.".to_owned(),
-      Self::AccPl => "acc.pl.".to_owned(),
-      Self::AblPl => "abl.pl.".to_owned(),
-      Self::VocPl => "voc.pl.".to_owned(),
-      Self::LocPl => "loc.pl.".to_owned(),
+      Self::Plural => "Pl",
+      Self::Singular => "Sg",
     }
+  }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Person {
+  First,
+  Second,
+  Third,
+}
+impl Person {
+  fn code(self) -> &'static str {
+    match self {
+      Self::First => "1",
+      Self::Second => "2",
+      Self::Third => "3",
+    }
+  }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Category {
+  Indicative,
+  Subjunctive,
+  Imperative,
+  NonFinite,
+  VerbalNoun,
+}
+impl Category {
+  fn code(self) -> &'static str {
+    match self {
+      Self::Indicative => "Ind",
+      Self::Subjunctive => "Sub",
+      Self::Imperative => "Imp",
+      Self::NonFinite => "",
+      Self::VerbalNoun => "",
+    }
+  }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum VerbalNoun {
+  GerGen,
+  GerDat,
+  GerAcc,
+  GerAbl,
+  SupAcc,
+  SupAbl,
+}
+impl VerbalNoun {
+  fn code(self) -> &'static str {
+    match self {
+      Self::GerGen => "GerGen",
+      Self::GerDat => "GerDat",
+      Self::GerAcc => "GerAcc",
+      Self::GerAbl => "GerAbl",
+      Self::SupAcc => "SupAcc",
+      Self::SupAbl => "SupAbl",
+    }
+  }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Voice {
+  Active,
+  Passive,
+}
+impl Voice {
+  fn code(self) -> &'static str {
+    match self {
+      Self::Active => "Act",
+      Self::Passive => "Pas",
+    }
+  }
+}
+
+trait TableContext: Sized + PartialEq + Copy {
+  fn active(self) -> bool;
+  fn passive(self) -> bool;
+  fn singular(self) -> bool;
+  fn plural(self) -> bool;
+  fn indicative(self) -> bool;
+  fn subjunctive(self) -> bool;
+  fn imperative(self) -> bool;
+  fn non_finite(self) -> bool;
+  fn present(self) -> bool;
+  fn imperfect(self) -> bool;
+  fn future(self) -> bool;
+  fn perfect(self) -> bool;
+  fn pluperfect(self) -> bool;
+  fn future2(self) -> bool;
+  fn infinitive(self) -> bool;
+  fn participle(self) -> bool;
+  fn gerund(self) -> bool;
+  fn supine(self) -> bool;
+  fn genetive(self) -> bool;
+  fn dative(self) -> bool;
+  fn accusative(self) -> bool;
+  fn ablative(self) -> bool;
+  fn first(self) -> bool;
+  fn second(self) -> bool;
+  fn third(self) -> bool;
+  fn max() -> Self;
+  fn time(self) -> Option<Time> {
+    if self.present() {
+      Some(Time::Present)
+    } else if self.imperfect() {
+      Some(Time::Imperfect)
+    } else if self.future() {Some(Time::Future)
+    } else if self.perfect() {
+      Some(Time::Perfect)
+    } else if self.pluperfect() {
+      Some(Time::Pluperfect)
+    } else if self.future2() {
+      Some(Time::FuturePerfect)
+    } else {
+      None
+    }
+  }
+  fn tantum(self) -> Option<Tantum> {
+    if self.singular() {
+      Some(Tantum::Singular)
+    } else if self.plural() {
+      Some(Tantum::Plural)
+    } else {
+      None
+    }
+  }
+  fn person(self) -> Option<Person> {
+    if self.first() {
+      Some(Person::First)
+    } else if self.second() {
+      Some(Person::Second)
+    } else if self.third() {
+      Some(Person::Third)
+    } else {
+      None
+    }
+  }
+  fn category(self) -> Category {
+    if self.indicative() {
+      Category::Indicative
+    } else if self.subjunctive() {
+      Category::Subjunctive
+    } else if self.imperative() {
+      Category::Imperative
+    } else if self.non_finite() {
+      Category::NonFinite
+    } else if self.verbal_noun() {
+      Category::VerbalNoun
+    } else {
+      panic!("unknown category")
+    }
+  }
+  fn noun(self) -> Option<VerbalNoun> {
+    if self.gerund() {
+      Some(if self.genetive() {
+        VerbalNoun::GerGen
+      } else if self.dative() {
+        VerbalNoun::GerDat
+      } else if self.accusative() {
+        VerbalNoun::GerAcc
+      } else if self.ablative() {
+        VerbalNoun::GerAbl
+      } else {
+        panic!("uknown gerund")
+      })
+    } else if self.supine() {
+      Some(if self.accusative() {
+        VerbalNoun::SupAcc
+      } else if self.ablative() {
+        VerbalNoun::SupAbl
+      } else {
+        panic!("uknown supine")
+      })
+    } else {
+      None
+    }
+  }
+  fn voice(self) -> Option<Voice> {
+    if self.active() {
+      Some(Voice::Active)
+    } else if self.passive() {
+      Some(Voice::Passive)
+    } else {
+      None
+    }
+  }
+  fn verbal_noun(self) -> bool {
+    self.gerund() || self.supine()
+  }
+  fn code(self) -> String {
+    format!(
+      "{}{}{}{}{}{}",
+      self.category().code(),
+      self.time().map(|v| v.code()).unwrap_or_default(),
+      self.voice().map(|v| v.code()).unwrap_or_default(),
+      self.person().map(|v| v.code()).unwrap_or_default(),
+      self.tantum().map(|v| v.code()).unwrap_or_default(),
+      self.noun().map(|v| v.code()).unwrap_or_default(),
+    )
+  }
+}
+
+impl TableContext for usize {
+  fn active(self) -> bool {
+    self >= 138 && self <= 140 ||
+      self >= 131 && self <= 133 ||
+      self >= 122 && self <= 126 ||
+      self >= 72 && self <= 95 ||
+      self <= 35
+  }
+  fn passive(self) -> bool {
+    self >= 141 && self <= 143 ||
+      self >= 135 && self <= 137 ||
+      self >= 127 && self <= 131 ||
+      self >= 96 && self <= 120 ||
+      self >= 36 && self <= 71
+  }
+  fn singular(self) -> bool {
+    self <= 120 && self % 6 >= 0 && self % 6 <= 2 ||
+      self == 121 || self == 123 || self == 124 || self == 127 || self == 129 || self == 130
+  }
+  fn plural(self) -> bool {
+    self <= 120 && self % 6 >= 3 && self % 6 <= 5 ||
+      self == 122 || self == 125 || self == 126 || self == 128 || self == 131
+  }
+  fn indicative(self) -> bool {
+    self <= 71
+  }
+  fn subjunctive(self) -> bool {
+    self >= 72 && self <= 120
+  }
+  fn imperative(self) -> bool {
+    self >= 121 && self <= 128
+  }
+  fn non_finite(self) -> bool {
+    self >= 132 && self <= 143
+  }
+  fn present(self) -> bool {
+    self <= 5 ||
+      self <= 41 && self >= 36 ||
+      self <= 77 && self >= 72 ||
+      self <= 101 && self >= 96 ||
+      self == 121 || self == 122 || self == 127 || self == 128 ||
+      self == 132 || self == 138 || self == 135 || self == 141
+  }
+  fn imperfect(self) -> bool {
+    self <= 11 && self >= 6 ||
+      self <= 47 && self >= 42 ||
+      self <= 83 && self >= 78 ||
+      self <= 107 && self >= 102
+  }
+  fn future(self) -> bool {
+    self <= 17 && self >= 12 ||
+      self <= 53 && self >= 48 ||
+      self == 123 || self == 124 || self == 125 || self == 126 ||
+      self == 129 || self == 130 || self == 131 ||
+      self == 134 || self == 140 || self == 137 || self == 143
+  }
+  fn perfect(self) -> bool {
+    self <= 23 && self >= 18 ||
+      self <= 59 && self >= 54 ||
+      self <= 89 && self >= 84 ||
+      self <= 114 && self >= 109 ||
+      self == 133 || self == 139 || self == 136 || self == 142
+  }
+  fn pluperfect(self) -> bool {
+    self <= 29 && self >= 24 ||
+      self <= 65 && self >= 60 ||
+      self <= 95 && self >= 90 ||
+      self <= 120 && self >= 115
+  }
+  fn future2(self) -> bool {
+    self <= 35 && self >= 30 ||
+      self <= 71 && self >= 66
+  }
+  fn infinitive(self) -> bool {
+    self >= 121 && self <= 131
+  }
+  fn participle(self) -> bool {
+    self >= 132 && self <= 143
+  }
+  fn gerund(self) -> bool {
+    self >= 144 && self <= 147
+  }
+  fn supine(self) -> bool {
+    self == 148 || self == 149
+  }
+  fn genetive(self) -> bool {
+    self == 144
+  }
+  fn dative(self) -> bool {
+    self == 145
+  }
+  fn accusative(self) -> bool {
+    self == 146 || self == 148
+  }
+  fn ablative(self) -> bool {
+    self == 147 || self == 149
+  }
+  fn first(self) -> bool {
+    self <= 120 && self % 3 == 0
+  }
+  fn second(self) -> bool {
+    self <= 120 && self % 3 == 1 ||
+      self == 121 || self == 123 || self == 127 || self == 129 ||
+      self == 122 || self == 125 || self == 128
+  }
+  fn third(self) -> bool {
+    self <= 120 && self % 3 == 2 ||
+      self == 124 || self == 130 || self == 126
+  }
+  fn max() -> Self {
+    149
   }
 }
