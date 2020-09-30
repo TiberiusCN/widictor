@@ -1,8 +1,18 @@
 use template::*;
+use mediawiki::*;
 use serde_json::to_writer;
 use std::env::var as env_var;
 use std::collections::{HashSet, HashMap};
 
+fn main() {
+  MediaWiki::check_dependencies(&[]);
+  let mw = MediaWiki::new().unwrap();
+  mw.execute("la-conj", "show").unwrap();
+  
+  todo!()
+}
+
+/*
 fn main() {
   let word = env_var("ENV_MAINWORD").unwrap();
   let lang = env_var("ENV_0").unwrap();
@@ -1357,3 +1367,5 @@ impl ToString for Case {
     }
   }
 }
+
+*/
