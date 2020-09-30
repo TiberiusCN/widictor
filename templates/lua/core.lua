@@ -2,6 +2,11 @@ local export = {}
 
 export.ustring = utf8
 export.text = {}
+export.title = {}
+
+function export.title.getCurrentTitle()
+  return os.getenv("ENV_MAINWORD")
+end
 
 function export.loadData(module)
    return require(module)
