@@ -535,32 +535,6 @@ struct Template {
   attributes: Vec<String>,
 }
 
-#[derive(Deserialize)]
-struct ApiAnswer {
-  query: ApiQuery,
-}
-
-#[derive(Deserialize)]
-struct ApiQuery {
-  pages: HashMap<String, ApiPage>,
-}
-
-#[derive(Deserialize)]
-struct ApiPage {
-  //pageid: u32,
-  //ns: u32,
-  //title: String,
-  revisions: Vec<ApiRevision>,
-}
-
-#[derive(Deserialize)]
-struct ApiRevision {
-  //contentformat: String,
-  //contentmodel: String,
-  #[serde(rename = "*")]
-  data: String,
-}
-
 fn main() {
   let arg = std::env::args().nth(1).unwrap();
   scan(&arg);
@@ -568,10 +542,8 @@ fn main() {
 
 fn scan(page: &str) {
   std::env::set_var("ENV_MAINWORD", page);
-  let resp = reqwest::blocking::get(&format!("https://en.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&titles={}", page)).unwrap();
-  let resp: ApiAnswer = serde_json::from_reader(resp.bytes().unwrap().as_ref()).unwrap();
-  let data = &resp.query.pages.iter().last().unwrap().1.revisions[0].data;
-  let data = Wiki::parse(data, page).unwrap().1;
+  let data = mediawiki::get(page);
+  let data = Wiki::parse(&data, page).unwrap().1;
   //println!("{:#?}", data);
 
   let language = &data.languages["Latin"];

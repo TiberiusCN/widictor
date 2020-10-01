@@ -5,9 +5,14 @@ use std::env::var as env_var;
 use std::collections::{HashSet, HashMap};
 
 fn main() {
-  MediaWiki::check_dependencies(&[]);
-  let mw = MediaWiki::new().unwrap();
-  mw.execute("la-conj", "show").unwrap();
+  if let Err(e) = wrap() {
+    eprintln!("{}", e);
+  }
+}
+fn wrap() -> Result<(), mediawiki::Error> {
+  MediaWiki::check_dependencies(&["la-nominal"])?;
+  let mw = MediaWiki::new()?;
+  mw.execute("la-nominal", "show_noun")?;
   
   todo!()
 }
