@@ -6,11 +6,11 @@ use std::collections::{HashSet, HashMap};
 
 fn main() {
   if let Err(e) = wrap() {
-    eprintln!("{}", e);
+    trace(&e)
   }
 }
 fn wrap() -> Result<(), mediawiki::Error> {
-  MediaWiki::check_dependencies(&["la-nominal"])?;
+  MediaWiki::check_dependencies(&["la-nominal", "la-adj/data", "la-adj/table", "la-noun/data", "la-noun/table", "parameters", "string utilities", "utilities", "links", "languages", "languages/data2"])?;
   let mw = MediaWiki::new()?;
   mw.execute("la-nominal", "show_noun")?;
   

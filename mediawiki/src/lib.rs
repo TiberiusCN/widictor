@@ -1,4 +1,5 @@
 use mlua::prelude::*;
+use mlua::Function;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -10,18 +11,36 @@ pub enum Error {
 }
 
 pub struct MediaWiki {
-  pub lua: Lua,
+  pub lua: &'static Lua,
 }
 
 impl MediaWiki {
   pub fn new() -> Result<Self, Error> {
     let lua = Lua::new();
+    let lua = lua.into_static();
+    lua.set_hook(mlua::HookTriggers {
+      every_line: true, ..Default::default()
+    }, |_lua, debug| {
+      println!("line {}: {}", debug.curr_line(), std::str::from_utf8(debug.source().short_src.unwrap()).unwrap());
+      Ok(())
+    }).unwrap();
 
     let mw = lua.create_table()?;
 
-    //let require = globals.get("require")?;
-    // require.cal::<_, ()>()?;
-    mw.set("print", lua.create_function(mw::mw_print)?)?;
+    {
+      let require: Function = lua.clone().globals().get("require")?;
+      let require = lua.create_function(move |_: &Lua, module: String| -> LuaResult<LuaTable> {
+        let module = module.as_str().strip_prefix("Module:").unwrap_or(&module);
+        println!("REQ: {}", module);
+        require.call(module.to_owned())
+      })?;
+      lua.globals().set("require", require.clone())?;
+      mw.set("loadData", require)?;
+    }
+
+    let unicode = lua.create_table()?;
+    mw.set("ustring", unicode)?;
+    // https://www.mediawiki.org/wiki/Extension:Scribunto/Lua_reference_manual#Ustring_library
 
     lua.globals().set("mw", mw)?;
 
@@ -33,53 +52,57 @@ impl MediaWiki {
   pub fn check_dependencies(deps: &[&str]) -> Result<(), Error> {
     use std::path::PathBuf;
 
-    let paths: Vec<PathBuf> = std::env::var("LUA_PATH").expect("LUA_PATH not found").split(':').map(PathBuf::from).collect();
+    let paths: Vec<PathBuf> = std::env::var("WIDICTOR_MW_MODULES").expect("WIDICTOR_MW_MODULES not found").split(':').map(PathBuf::from).collect();
     for dep in deps {
-      let dep = format!("Module:{}", dep);
-      let mut found = false;
+      let mut target = false;
 
-      for stat in &["params"] {
-        if stat == &dep {
-          found = true;
-          break;
-        }
-      };
-
-      if !found {
-        for path in &paths {
-          let path = path.join(format!("{}.lua", dep));
+      if !target {
+        for dir_path in &paths {
+          let path = dir_path.join(format!("{}.lua", dep));
           if path.exists() {
-            found = true;
+            target = true;
             break;
           }
         }
-        if !found {
-          for path in &paths {
-            let path = path.join(format!("{}.lua", dep));
-            if let Ok(mut module) = std::fs::File::create(path) {
+        if !target {
+          for dir_path in &paths {
+            let path = dir_path.join(format!("{}.lua", dep));
+            let mut dir = path.clone();
+            dir.pop();
+            let _ = std::fs::create_dir_all(dir);
+            if let Ok(mut module) = std::fs::File::create(&path) {
               use std::io::Write;
-              let data = get(&dep);
+              let data = get(&format!("Module:{}", dep));
               module.write_all(data.as_bytes()).unwrap();
+              target = true;
 
-              found = true;
               break;
             }
           }
-        }
 
-        if !found { return Err(Error::NoSuchModule(dep.to_string())); }
+          if !target {
+            return Err(Error::NoSuchModule(dep.to_owned().to_string()));
+          }
+        }
       }
     }
+
+    let mut modules = String::new();
+    for path in &paths {
+      modules += &format!("{}/?.lua;", path.display().to_string());
+    }
+    let lua_path = std::env::var("LUA_PATH").unwrap_or_default();
+    std::env::set_var("LUA_PATH", &format!("{}{}", modules, lua_path));
     Ok(())
   }
 
   pub fn execute(&self, module: &str, function: &str) -> Result<String, LuaError> {
     let out = self.lua.load(&format!(r#"
 local module = require("Module:{}")
-require.{}()
+module.{}()
       "#, module, function))
       .exec()?;
-    panic!("{:#?}", out)
+    panic!("BE: {:#?}", out)
   }
 }
 
@@ -87,8 +110,7 @@ require.{}()
 mod mw {
   use mlua::prelude::*;
   
-  pub fn mw_print(_: &Lua, value: String) -> LuaResult<()> {
-    println!("{}", value);
+  pub fn mw_proto(_: &Lua, value: String) -> LuaResult<()> {
     Ok(())
   }
 }
@@ -137,4 +159,13 @@ pub fn get(page: &str) -> String {
   let resp = reqwest::blocking::get(&format!("https://en.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&titles={}", page)).unwrap();
   let resp: ApiAnswer = serde_json::from_reader(resp.bytes().unwrap().as_ref()).unwrap();
   resp.query.pages.iter().last().unwrap().1.revisions[0].data.clone()
+}
+
+pub fn trace(error: &dyn std::error::Error) -> ! {
+  println!("{}", error);
+  if let Some(src) = error.source() {
+    trace(src)
+  } else {
+    panic!()
+  }
 }
