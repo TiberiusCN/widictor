@@ -10,8 +10,27 @@ fn main() {
   }
 }
 fn wrap() -> Result<(), mediawiki::Error> {
-  MediaWiki::check_dependencies(&["la-nominal", "la-adj/data", "la-adj/table", "la-noun/data", "la-noun/table", "parameters", "string utilities", "utilities", "links", "languages", "languages/data2"])?;
-  let mw = MediaWiki::new()?;
+  let mut mw = MediaWiki::new()?;
+  for dep in &[
+    "la-nominal",
+    "la-adj/data",
+    "la-adj/table",
+    "la-noun/data",
+    "la-noun/table",
+    "parameters",
+    "string utilities",
+    "utilities",
+    "links",
+    "languages",
+    "languages/data2",
+    "utilities/data",
+    "utils",
+    "string",
+    "table",
+  ] {
+    mw.check_dependency(dep)?;
+  }
+  mw.init()?;
   mw.execute("la-nominal", "show_noun")?;
   
   todo!()
