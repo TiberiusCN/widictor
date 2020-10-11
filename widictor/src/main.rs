@@ -1,5 +1,5 @@
 use serde_derive::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use nom::*;
 use nom::error::*;
 use template::TemplateText;
@@ -110,9 +110,10 @@ impl Combinator {
         for section in &sections.sections {
           if let Some(section) = section.as_ref() {
             let section = &section.0;
-            println!("    {:?}:\n\x1b[31m{}\x1b[0m\n", section.name, section.text());
+            if section.name.species() == Some(0) {
+              println!("{}", section.text())
+            }
           } else {
-            println!("    Empty");
           }
         }
       }
@@ -134,6 +135,7 @@ impl Wiki {
 
   fn parse<'a>(mut input: &'a str, name: &str) -> IResult<&'a str, Self, WikiError<&'a str>> {
     let mut elements: Vec<Element> = Vec::new();
+    let mut subs = HashSet::new();
 
     let mut wrap = |source: &str| {
       if source.is_empty() { return; }
@@ -142,7 +144,7 @@ impl Wiki {
         Language::parse(source).map(|s| Element::Language(s.1))
         .or_else(|_| WordSection::parse(source).map(|s| Element::WordSection(s.1)))
         .or_else(|_| Self::section_ending(source).map(|_| Element::LanguageSeparator))
-        .or_else(|_| Text::parse(source).map(|s| Element::Text(s.1)))
+        .or_else(|_| Text::parse(source, &mut subs).map(|s| Element::Text(s.1)))
         .unwrap();
 
       elements.push(element);
@@ -168,7 +170,7 @@ impl Wiki {
     let combinator = combinator.finish();
 
     combinator.build("Latin");
-    panic!();
+    panic!("SUBS: {:?}", subs);
 
     /*
     Ok((input, Self {
@@ -367,13 +369,20 @@ impl Piece {
         let mut com = std::process::Command::new(&map["0"][0]);
         for (key, values) in map.iter() {
           if values.len() > 1 {
+            let mut total = "((".to_owned();
             for (index, value) in values.iter().enumerate() {
               com.env(format!("ENV_{}_{}", key, index), value);
+              total += value;
+              total += ",";
             }
+            total.pop();
+            total += "))";
+            com.env(format!("ENV_{}", key), &total);
           } else {
             com.env(format!("ENV_{}", key), &values[0]);
           }
         }
+        /*
         let com = com.output().unwrap_or_else(|e| panic!("process {} failed: {}", &map["0"][0], e));
         if com.status.success() {
           let stdout = std::str::from_utf8(com.stdout.as_slice()).unwrap();
@@ -384,6 +393,8 @@ impl Piece {
           let stderr = String::from_utf8(com.stderr).unwrap_or_else(|e| format!("bad utf-8: {}", e));
           panic!("{} fails: {}", &map["0"][0], stderr);
         }
+        */
+        String::new()
       },
     }
   }
@@ -416,13 +427,14 @@ impl Text {
         let mut headers = Vec::new();
         let mut header = None;
         let mut text = String::new();
+        let mut linked = 0;
         for c in s.chars() {
           match c {
             '=' => {
               header = Some(text);
               text = String::new();
             },
-            '|' => {
+            '|' if linked == 0 => {
               headers.push(header.take());
               subv.push(text);
               text = String::new();
@@ -434,6 +446,12 @@ impl Text {
             },
             ')' => {
               multi -= 1;
+            },
+            '[' => {
+              linked += 1;
+            },
+            ']' => {
+              linked -= 1;
             },
             ',' if multi == 2 => {
               subv.push(text);
@@ -468,7 +486,7 @@ impl Text {
   }));
   named!(list<&str, usize, WikiError<&str>>, map!(take_while1!(|c| c == '#' || c == '*'), |r| r.len()));
 
-  fn parse(mut input: &str) -> IResult<&str, Self, WikiError<&str>> {
+  fn parse<'a>(mut input: &'a str, subs: &mut HashSet<String>) -> IResult<&'a str, Self, WikiError<&'a str>> {
     let list = Self::list(input).map(|(tail, deep)| {
       input = tail;
       deep
@@ -478,7 +496,19 @@ impl Text {
     let mut pieces = Vec::new();
 
     while !input.is_empty() {
-      if let Ok((tail, template)) = Self::wrapped_template(input) {
+      if let Ok((tail, mut template)) = Self::wrapped_template(input) {
+        if let Piece::Template(template) = &mut template {
+          for parts in template.values_mut() {
+            for part in parts.iter_mut() {
+              let mut split = part.split('|');
+              let sub = split.next().unwrap();
+              if let Some(form) = split.next() {
+                subs.insert(sub.to_string());
+                *part = form.to_string();
+              }
+            }
+          }
+        }
         if !data.is_empty() {
           pieces.push(Piece::Raw(data));
           data = String::new();
@@ -487,7 +517,13 @@ impl Text {
         input = tail;
       } else {
         if let Ok((tail, link)) = Self::link(input) {
-          data += link;
+          let mut splits = link.split('|');
+          let sub = splits.next().unwrap();
+          if let Some(form) = splits.next() {
+            subs.insert(sub.to_owned());
+            data += form;
+          }
+          data += sub;
           input = tail;
         } else {
           let mut chars = input.chars();
@@ -518,11 +554,11 @@ impl Text {
         }
       },
       Self::List(level, texts) => {
+        for _ in 0..*level { total += "*"; }
         for text in texts {
-          total += "\n";
-          for _ in 0..*level { total += "*"; }
           total += &text.text();
         }
+        total += "\n";
       },
     }
     total
@@ -581,5 +617,3 @@ impl Word {
     }
   }
 }
-
-// http://translate.googleapis.com/translate_a/single?client=gtx&sl=EN&tl=<LANG>&dt=t&q=phrase%20with%20percents

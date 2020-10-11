@@ -47,6 +47,7 @@ impl MediaWiki {
       Ok(())
     }).unwrap();
 
+    /*
     let mw = lua.create_table()?;
 
     {
@@ -70,6 +71,7 @@ impl MediaWiki {
     // https://www.mediawiki.org/wiki/Extension:Scribunto/Lua_reference_manual#Ustring_library
 
     lua.globals().set("mw", mw)?;
+    */
 
     Ok(())
   }
@@ -121,15 +123,6 @@ module.{}()
   }
 }
 
-#[allow(unused)]
-mod mw {
-  use mlua::prelude::*;
-  
-  pub fn mw_unicode_char(_: &Lua, value: u32) -> LuaResult<String> {
-    Ok(std::char::from_u32(value).unwrap().to_string())
-  }
-}
-
 #[cfg(test)]
 mod test {
   use super::*;
@@ -174,6 +167,14 @@ pub fn get(page: &str) -> String {
   let resp = reqwest::blocking::get(&format!("https://en.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&titles={}", page)).unwrap();
   let resp: ApiAnswer = serde_json::from_reader(resp.bytes().unwrap().as_ref()).unwrap();
   resp.query.pages.iter().last().unwrap().1.revisions[0].data.clone()
+}
+
+pub fn translate(s: &str, into: &str) -> String {
+  let s = percent_encoding::utf8_percent_encode(s, percent_encoding::NON_ALPHANUMERIC).to_string();
+  let resp = reqwest::blocking::get(&format!("http://translate.googleapis.com/translate_a/single?client=gtx&sl=EN&tl={}&dt=t&q={}", into, s)).unwrap();
+  //let resp: GApiAnswer = serde_json::from_reader(resp.bytes().unwrap().as_ref()).unwrap();
+  unimplemented!()
+    // todo: uniq subcrate?
 }
 
 pub fn trace(error: &dyn std::error::Error) -> ! {
