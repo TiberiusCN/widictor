@@ -172,9 +172,21 @@ pub fn get(page: &str) -> String {
 pub fn translate(s: &str, into: &str) -> String {
   let s = percent_encoding::utf8_percent_encode(s, percent_encoding::NON_ALPHANUMERIC).to_string();
   let resp = reqwest::blocking::get(&format!("http://translate.googleapis.com/translate_a/single?client=gtx&sl=EN&tl={}&dt=t&q={}", into, s)).unwrap();
-  //let resp: GApiAnswer = serde_json::from_reader(resp.bytes().unwrap().as_ref()).unwrap();
-  unimplemented!()
-    // todo: uniq subcrate?
+  let resp = std::string::String::from_utf8(resp.bytes().unwrap().as_ref().to_owned()).unwrap();
+  let mut out = String::new();
+  let mut q = false;
+  let mut s = false;
+  for c in resp.chars() {
+    match c {
+      '"' => if !s {
+        q = !q;
+        if !q { break; }
+      },
+      '\\' => s = !s,
+      x => if q { out.push(x); },
+    }
+  }
+  out
 }
 
 pub fn trace(error: &dyn std::error::Error) -> ! {

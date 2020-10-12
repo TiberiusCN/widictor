@@ -2,7 +2,7 @@ use serde_derive::*;
 use std::collections::{HashMap, HashSet};
 use nom::*;
 use nom::error::*;
-use template::TemplateText;
+use template::Word as Lemma;
 
 #[derive(Debug)]
 pub enum WikiError<I> {
@@ -101,23 +101,37 @@ impl Combinator {
 
   fn build(&self, language: &str) {
     if self.last_language != None { panic!("unfinished"); }
-    let mut subwords: Vec<(String, String)> = Vec::new();
+
+    let mut words = Vec::new();
 
     if let Some(lang_value) = self.languages.get(language) {
-      println!("{}:", language);
-      for (word, sections) in lang_value.build().into_iter().enumerate() {
-        println!("  {}:", word);
+      for sections in lang_value.build().into_iter() {
+        let mut word = Lemma {
+          mutation: None,
+          subwords: Vec::new(),
+          tags: Vec::new(),
+          value: None,
+        };
+
         for section in &sections.sections {
           if let Some(section) = section.as_ref() {
             let section = &section.0;
             if section.name.species() == Some(0) {
-              println!("{}", section.text())
+              if let Some(text) = section.text() {
+                word.value = Some(text)
+              }
             }
-          } else {
+            if let Some(tag) = section.name.tag() {
+              word.tags.push(tag.to_owned());
+            }
           }
+        }
+        if word.value.is_some() {
+          words.push(word);
         }
       }
     }
+    panic!("{:#?}", words);
   }
 }
 
@@ -262,6 +276,24 @@ impl Section {
       Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Synonyms | Self::Antonyms | Self::Determiner | Self::Contraction => return None,
     })
   }
+
+  fn tag(&self) -> Option<&'static str> {
+    match self {
+      Self::Declension | Self::DerivedTerms | Self::RelatedTerms | Self::Descendants | Self::SeeAlso | Self::Etymology | Self::Pronunciation | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Conjugation | Self::UsageNotes | Self::Translations | Self::Anagrams | Self::Synonyms | Self::Antonyms | Self::Determiner | Self::Contraction => None,
+
+      Self::Conjunction => Some("conjunction"),
+      Self::Noun => Some("noun"),
+      Self::Verb => Some("verb"),
+      Self::Adjective => Some("adjective"),
+      Self::Participle => Some("participle"),
+      Self::Preposition => Some("preposition"),
+      Self::Pronoun => Some("pronoun"),
+      Self::Interjection => Some("interjection"),
+      Self::Adverb => Some("adverb"),
+      Self::Numeral => Some("numeral"),
+      Self::Particle => Some("particle"),
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -346,12 +378,14 @@ impl WordSection {
     builder
   }
 
-  fn text(&self) -> String {
+  fn text(&self) -> Option<String> {
     let mut out = String::new();
     for text in &self.content {
-      out += &text.text();
+      if let Some(text) = text.text() {
+        out += &text;
+      }
     }
-    out
+    if out.is_empty() { None } else { Some(out) }
   }
 }
 
@@ -362,9 +396,9 @@ enum Piece {
 }
 
 impl Piece {
-  fn text(&self) -> String {
+  fn text(&self) -> Option<String> {
     match self {
-      Self::Raw(raw) => raw.clone(),
+      Self::Raw(raw) => if raw.is_empty() { None } else { Some(raw.clone()) },
       Self::Template(map) => {
         let mut com = std::process::Command::new(&map["0"][0]);
         for (key, values) in map.iter() {
@@ -394,7 +428,7 @@ impl Piece {
           panic!("{} fails: {}", &map["0"][0], stderr);
         }
         */
-        String::new()
+        None
       },
     }
   }
@@ -545,23 +579,35 @@ impl Text {
     Ok((input, text))
   }
 
-  fn text(&self) -> String {
-    let mut total = String::new();
+  fn text(&self) -> Option<String> {
+    let mut out = String::new();
+    let mut existed = false;
     match self {
       Self::Text(texts) => {
         for text in texts {
-          total += &text.text();
+          if let Some(text) = text.text() {
+            out += &text;
+            if !text.trim().is_empty() {
+              existed = true;
+            }
+          }
         }
       },
       Self::List(level, texts) => {
-        for _ in 0..*level { total += "*"; }
+        for _ in 0..*level { out += "*"; }
         for text in texts {
-          total += &text.text();
+          if let Some(text) = text.text() {
+            if !text.trim().is_empty() {
+              out += &text;
+              existed = true;
+            }
+          }
         }
-        total += "\n";
+        if ! existed { return None; }
+        out += "\n";
       },
     }
-    total
+    if !existed { None } else { Some(out) }
   }
 }
 
