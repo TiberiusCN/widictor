@@ -2,7 +2,7 @@ use serde_derive::*;
 use std::collections::{HashMap, HashSet};
 use nom::*;
 use nom::error::*;
-use template::Word as Lemma;
+use template::{Word as Lemma, Params};
 
 #[derive(Debug)]
 pub enum WikiError<I> {
@@ -392,7 +392,7 @@ impl WordSection {
 #[derive(Debug, Clone)]
 enum Piece {
   Raw(String),
-  Template(HashMap<String, Vec<String>>),
+  Template(Params),
 }
 
 impl Piece {
@@ -400,23 +400,7 @@ impl Piece {
     match self {
       Self::Raw(raw) => if raw.is_empty() { None } else { Some(raw.clone()) },
       Self::Template(map) => {
-        let mut com = std::process::Command::new(&map["0"][0]);
-        for (key, values) in map.iter() {
-          if values.len() > 1 {
-            let mut total = "((".to_owned();
-            for (index, value) in values.iter().enumerate() {
-              com.env(format!("ENV_{}_{}", key, index), value);
-              total += value;
-              total += ",";
-            }
-            total.pop();
-            total += "))";
-            com.env(format!("ENV_{}", key), &total);
-          } else {
-            com.env(format!("ENV_{}", key), &values[0]);
-          }
-        }
-        /*
+        let mut com = std::process::Command::new(&map.com).;
         let com = com.output().unwrap_or_else(|e| panic!("process {} failed: {}", &map["0"][0], e));
         if com.status.success() {
           let stdout = std::str::from_utf8(com.stdout.as_slice()).unwrap();
@@ -427,7 +411,6 @@ impl Piece {
           let stderr = String::from_utf8(com.stderr).unwrap_or_else(|e| format!("bad utf-8: {}", e));
           panic!("{} fails: {}", &map["0"][0], stderr);
         }
-        */
         None
       },
     }
@@ -506,17 +489,20 @@ impl Text {
   named!(link<&str, &str, WikiError<&str>>, delimited!(Self::link_open, take_while1!(|c: char| c != ']'), Self::link_close));
   named!(wrapped_template<&str, Piece, WikiError<&str>>, map!(Self::template, |(headers, values)| {
     let mut id = 0;
+    let mut data: HashMap<String, Vec<String>> = headers.into_iter().zip(values.into_iter()).map(|(header, values)| {
+      let header = header.map(|p| p.to_owned()).unwrap_or_else(|| {
+        let out = format!("{}", id);
+        id += 1;
+        out
+      });
+      (header, values.into_iter().map(|v| v.to_owned()).collect())
+    }).collect();
 
-    Piece::Template(
-      headers.into_iter().zip(values.into_iter()).map(|(header, values)| {
-        let header = header.map(|p| p.to_owned()).unwrap_or_else(|| {
-          let out = format!("{}", id);
-          id += 1;
-          out
-        });
-        (header, values.into_iter().map(|v| v.to_owned()).collect())
-      }).collect()
-    )
+    let com = data.remove("0").map(|v| v[0].clone()).unwrap_or_default();
+    Piece::Template(Params {
+      com,
+      args: data,
+    })
   }));
   named!(list<&str, usize, WikiError<&str>>, map!(take_while1!(|c| c == '#' || c == '*'), |r| r.len()));
 
@@ -532,7 +518,7 @@ impl Text {
     while !input.is_empty() {
       if let Ok((tail, mut template)) = Self::wrapped_template(input) {
         if let Piece::Template(template) = &mut template {
-          for parts in template.values_mut() {
+          for parts in template.args.values_mut() {
             for part in parts.iter_mut() {
               let mut split = part.split('|');
               let sub = split.next().unwrap();
