@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use nom::*;
 use nom::error::*;
 use template::{Word as Lemma, Params};
+use std::io::Read;
 
 #[derive(Debug)]
 pub enum WikiError<I> {
@@ -400,17 +401,24 @@ impl Piece {
     match self {
       Self::Raw(raw) => if raw.is_empty() { None } else { Some(raw.clone()) },
       Self::Template(map) => {
-        let mut com = std::process::Command::new(&map.com).;
-        let com = com.output().unwrap_or_else(|e| panic!("process {} failed: {}", &map["0"][0], e));
-        if com.status.success() {
-          let stdout = std::str::from_utf8(com.stdout.as_slice()).unwrap();
-          let text: TemplateText = serde_json::from_str(stdout).unwrap();
-          println!("FOUND: {:#?}", text);
-          String::new()
-        } else {
-          let stderr = String::from_utf8(com.stderr).unwrap_or_else(|e| format!("bad utf-8: {}", e));
-          panic!("{} fails: {}", &map["0"][0], stderr);
-        }
+        let mut com = std::process::Command::new(&map.com)
+          .stdin(std::process::Stdio::piped())
+          .stdout(std::process::Stdio::piped())
+          .stderr(std::process::Stdio::piped())
+          .spawn().map_err(|e| eprintln!("process {} failed: {}", map.com, e)).ok()?;
+        let stdin = com.stdin.take().unwrap();
+        let stdout = com.stdout.take().unwrap();
+        let mut stderr = com.stderr.take().unwrap();
+        serde_json::to_writer(stdin, &map).unwrap();
+        let com = com.wait().unwrap();
+        let mut err = String::new();
+        let _ = stderr.read_to_string(&mut err).map_err(|e| eprintln!("bad stderr: {}", e));
+        if !err.is_empty() { eprintln!("process {}: {}", map.com, err); }
+        if !com.success() { eprintln!("process {} failed with {:?}", map.com, com.code()); return None; }
+
+        let lemma: Lemma = serde_json::from_reader(stdout).map_err(|e| eprintln!("bad json from {}: {}", map.com, e)).ok()?;
+        println!("{:?}", lemma);
+
         None
       },
     }

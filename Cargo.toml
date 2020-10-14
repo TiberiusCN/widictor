@@ -3,6 +3,7 @@ members = [
   "widictor",
   "templates/noun",
   "templates/verb",
+  "templates/inflection_of",
   "template",
   "mediawiki",
 ]
