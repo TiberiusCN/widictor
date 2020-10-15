@@ -123,23 +123,20 @@ impl Combinator {
 
     if let Some(lang_value) = self.languages.get(language) {
       for sections in lang_value.build().into_iter() {
-        let mut word = Lemma {
-          mutation: None,
-          subwords: Vec::new(),
-          tags: Vec::new(),
-          value: None,
-        };
+        let mut word = Lemma::default();
 
         for section in &sections.sections {
           if let Some(section) = section.as_ref() {
             let section = &section.0;
-            if section.name.species() == Some(0) {
-              if let Some(text) = section.text() {
-                word.value = Some(text)
+            let mut lemma = section.text();
+            let value = lemma.value.take();
+            if let Some(species) = section.name.general_species() {
+              match species {
+                SectionSpecies::Word => lemma.value = value,
               }
             }
             if let Some(tag) = section.name.tag() {
-              word.tags.push(tag.to_owned());
+              lemma.tags.insert(tag.to_owned());
             }
           }
         }
@@ -277,6 +274,15 @@ enum Section {
   Particle,
 }
 
+enum SectionSpecies {
+  Word,
+  Mutation,
+  Provided,
+  Etymology,
+  Pronunciation,
+  UsageNotes,
+}
+
 impl Section {
   fn species(&self) -> Option<usize> {
     Some(match self {
@@ -289,8 +295,23 @@ impl Section {
       Self::Pronunciation => 6,
       Self::Conjugation => 7,
       Self::UsageNotes => 8,
+      Self::Synonyms => 9,
+      Self::Antonyms => 10,
 
-      Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Synonyms | Self::Antonyms | Self::Determiner | Self::Contraction => return None,
+      Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Determiner | Self::Contraction => return None,
+    })
+  }
+  
+  fn general_species(&self) -> Option<SectionSpecies> {
+    Some(match self {
+      Self::Conjunction | Self::Noun | Self::Verb | Self::Adjective | Self::Participle | Self::Preposition | Self::Pronoun | Self::Interjection | Self::Adverb | Self::Numeral | Self::Particle => SectionSpecies::Word,
+      Self::Declension | Self::Conjugation => SectionSpecies::Mutation,
+      Self::DerivedTerms | Self::RelatedTerms | Self::Descendants | Self::Synonyms | Self::Antonyms => SectionSpecies::Provided,
+      Self::Etymology => SectionSpecies::Etymology,
+      Self::Pronunciation => SectionSpecies::Pronunciation,
+      Self::UsageNotes => SectionSpecies::UsageNotes,
+
+      Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Determiner | Self::Contraction => return None,
     })
   }
 
@@ -395,14 +416,12 @@ impl WordSection {
     builder
   }
 
-  fn text(&self) -> Option<String> {
-    let mut out = String::new();
+  fn text(&self) -> Lemma {
+    let mut lemma = Lemma::default();
     for text in &self.content {
-      if let Some(text) = text.text() {
-        out += &text;
-      }
+      text.text(&mut lemma);
     }
-    if out.is_empty() { None } else { Some(out) }
+    lemma
   }
 }
 
@@ -413,16 +432,23 @@ enum Piece {
 }
 
 impl Piece {
-  fn text(&self) -> Option<String> {
+  fn text(&self, prefix: &str, lemma: &mut Lemma, suffix: &str) {
     match self {
-      Self::Raw(raw) => if raw.is_empty() { None } else { Some(raw.clone()) },
+      Self::Raw(raw) => if !raw.is_empty() { lemma.append_value(prefix, raw, suffix); },
       Self::Template(map) => {
         if let Some(template) = TEMPLATES.get(&map.com) {
-          let mut com = std::process::Command::new(template)
+          let mut com = match std::process::Command::new(template)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .spawn().map_err(|e| eprintln!("template {} failed: {}", map.com, e)).ok()?;
+            .spawn()
+          {
+            Err(e) => {
+              eprintln!("template {} failed: {}", map.com, e);
+              return;
+            },
+            Ok(v) => v,
+          };
           let stdin = com.stdin.take().unwrap();
           let stdout = com.stdout.take().unwrap();
           let mut stderr = com.stderr.take().unwrap();
@@ -431,14 +457,13 @@ impl Piece {
           let mut err = String::new();
           let _ = stderr.read_to_string(&mut err).map_err(|e| eprintln!("bad stderr: {}", e));
           if !err.is_empty() { eprintln!("template {}: {}", map.com, err); }
-          if !com.success() { eprintln!("template {} failed with {:?}", map.com, com.code()); return None; }
+          if !com.success() { eprintln!("template {} failed with {:?}", map.com, com.code()); return; }
 
-          let lemma: Lemma = serde_json::from_reader(stdout).map_err(|e| eprintln!("bad json from {}: {}", map.com, e)).ok()?;
-          println!("{:?}", lemma);
-          None
+          if let Ok(new_lemma) = serde_json::from_reader(stdout).map_err(|e| eprintln!("bad json from {}: {}", map.com, e)) {
+            *lemma += new_lemma;
+          }
         } else {
           eprintln!("unknown template: {}", map.com);
-          None
         }
       },
     }
@@ -593,35 +618,22 @@ impl Text {
     Ok((input, text))
   }
 
-  fn text(&self) -> Option<String> {
-    let mut out = String::new();
-    let mut existed = false;
+  fn text(&self, lemma: &mut Lemma) {
     match self {
       Self::Text(texts) => {
         for text in texts {
-          if let Some(text) = text.text() {
-            out += &text;
-            if !text.trim().is_empty() {
-              existed = true;
-            }
-          }
+          text.text("", lemma, "");
         }
       },
       Self::List(level, texts) => {
-        for _ in 0..*level { out += "*"; }
+        let mut prefix = String::new();
+        for _ in 0..*level { prefix.push('*'); }
+        prefix.push(' ');
         for text in texts {
-          if let Some(text) = text.text() {
-            if !text.trim().is_empty() {
-              out += &text;
-              existed = true;
-            }
-          }
+          text.text(&prefix, lemma, "\n");
         }
-        if ! existed { return None; }
-        out += "\n";
       },
     }
-    if !existed { None } else { Some(out) }
   }
 }
 
@@ -652,7 +664,7 @@ fn scan(page: &str) {
 
 #[derive(Clone, Debug, Default)]
 struct Word {
-  sections: [Option<(WordSection, usize)>; 9],
+  sections: [Option<(WordSection, usize)>; 11],
 }
 
 impl Word {
