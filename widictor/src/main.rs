@@ -1,9 +1,25 @@
-use serde_derive::*;
 use std::collections::{HashMap, HashSet};
 use nom::*;
 use nom::error::*;
 use template::{Word as Lemma, Params};
 use std::io::Read;
+
+lazy_static::lazy_static! {
+  static ref TEMPLATES: HashMap<String, std::path::PathBuf> = {
+    let config_path = directories::ProjectDirs::from("com", "APQM", "widictor").unwrap().config_dir().join("templates.conf");
+    println!("{}", config_path.display());
+    let x_dir = directories::BaseDirs::new().unwrap().executable_dir().unwrap().to_owned();
+    let f = std::fs::read_to_string(config_path).unwrap();
+    let mut hash = HashMap::new();
+    for p in f.lines() {
+      let mut  p = p.split('~');
+      if let (Some(template), Some(executable)) = (p.next(), p.next()) {
+        hash.insert(template.to_owned(), x_dir.join(executable));
+      }
+    }
+    hash
+  };
+}
 
 #[derive(Debug)]
 pub enum WikiError<I> {
@@ -401,25 +417,29 @@ impl Piece {
     match self {
       Self::Raw(raw) => if raw.is_empty() { None } else { Some(raw.clone()) },
       Self::Template(map) => {
-        let mut com = std::process::Command::new(&map.com)
-          .stdin(std::process::Stdio::piped())
-          .stdout(std::process::Stdio::piped())
-          .stderr(std::process::Stdio::piped())
-          .spawn().map_err(|e| eprintln!("process {} failed: {}", map.com, e)).ok()?;
-        let stdin = com.stdin.take().unwrap();
-        let stdout = com.stdout.take().unwrap();
-        let mut stderr = com.stderr.take().unwrap();
-        serde_json::to_writer(stdin, &map).unwrap();
-        let com = com.wait().unwrap();
-        let mut err = String::new();
-        let _ = stderr.read_to_string(&mut err).map_err(|e| eprintln!("bad stderr: {}", e));
-        if !err.is_empty() { eprintln!("process {}: {}", map.com, err); }
-        if !com.success() { eprintln!("process {} failed with {:?}", map.com, com.code()); return None; }
+        if let Some(template) = TEMPLATES.get(&map.com) {
+          let mut com = std::process::Command::new(template)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn().map_err(|e| eprintln!("template {} failed: {}", map.com, e)).ok()?;
+          let stdin = com.stdin.take().unwrap();
+          let stdout = com.stdout.take().unwrap();
+          let mut stderr = com.stderr.take().unwrap();
+          serde_json::to_writer(stdin, &map).unwrap();
+          let com = com.wait().unwrap();
+          let mut err = String::new();
+          let _ = stderr.read_to_string(&mut err).map_err(|e| eprintln!("bad stderr: {}", e));
+          if !err.is_empty() { eprintln!("template {}: {}", map.com, err); }
+          if !com.success() { eprintln!("template {} failed with {:?}", map.com, com.code()); return None; }
 
-        let lemma: Lemma = serde_json::from_reader(stdout).map_err(|e| eprintln!("bad json from {}: {}", map.com, e)).ok()?;
-        println!("{:?}", lemma);
-
-        None
+          let lemma: Lemma = serde_json::from_reader(stdout).map_err(|e| eprintln!("bad json from {}: {}", map.com, e)).ok()?;
+          println!("{:?}", lemma);
+          None
+        } else {
+          eprintln!("unknown template: {}", map.com);
+          None
+        }
       },
     }
   }
