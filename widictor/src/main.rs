@@ -116,36 +116,53 @@ impl Combinator {
     self.texts.push(text);
   }
 
-  fn build(&self, language: &str) {
+  fn build(&self, languages: &[String]) -> (HashMap<String, Vec<Lemma>>, HashSet<String>) {
     if self.last_language != None { panic!("unfinished"); }
 
-    let mut words = Vec::new();
+    let mut out_words = HashMap::new();
+    let mut out_subwords = HashSet::new();
 
-    if let Some(lang_value) = self.languages.get(language) {
-      for sections in lang_value.build().into_iter() {
-        let mut word = Lemma::default();
+    for language in languages {
+      let mut words = Vec::new();
 
-        for section in &sections.sections {
-          if let Some(section) = section.as_ref() {
-            let section = &section.0;
-            let mut lemma = section.text();
-            let value = lemma.value.take();
-            if let Some(species) = section.name.general_species() {
-              match species {
-                SectionSpecies::Word => lemma.value = value,
+      if let Some(lang_value) = self.languages.get(language) {
+        for sections in lang_value.build().into_iter() {
+          let mut word = Lemma::default();
+
+          for section in &sections.sections {
+            if let Some(section) = section.as_ref() {
+              let section = &section.0;
+              let mut lemma = section.text();
+              let value = lemma.value.take();
+              if let Some(value) = value {
+                if let Some(species) = section.name.general_species() {
+                  match species {
+                    SectionSpecies::Word => lemma.value = Some(value),
+                    SectionSpecies::Etymology => { lemma.properties.insert("etymology".to_owned(), value); },
+                    SectionSpecies::Mutation => { lemma.properties.insert("mutation notes".to_owned(), value); },
+                    SectionSpecies::Pronunciation => { lemma.properties.insert("pronunciation".to_owned(), value); },
+                    SectionSpecies::Provided => {},
+                    SectionSpecies::UsageNotes => { lemma.properties.insert("usage notes".to_owned(), value); },
+                  }
+                }
               }
-            }
-            if let Some(tag) = section.name.tag() {
-              lemma.tags.insert(tag.to_owned());
+              if let Some(tag) = section.name.tag() {
+                lemma.tags.insert(tag.to_owned());
+              }
+              word += lemma;
             }
           }
-        }
-        if word.value.is_some() {
-          words.push(word);
+          while let Some (subword) = word.subwords.pop() {
+            out_subwords.insert(subword);
+          }
+          if word.value.is_some() {
+            words.push(word);
+          }
         }
       }
+      out_words.insert(language.to_owned(), words);
     }
-    panic!("{:#?}", words);
+    (out_words, out_subwords)
   }
 }
 
@@ -197,8 +214,11 @@ impl Wiki {
 
     let combinator = combinator.finish();
 
-    combinator.build("Latin");
-    panic!("SUBS: {:?}", subs);
+    let (words, subwords) = combinator.build(&["Latin".to_string(), "French".to_string(), "German".to_string(), "English".to_string()]);
+    for word in subwords {
+      subs.insert(word);
+    }
+    panic!("SUBS: {:?}\nWords:\n{:#?}", subs, words);
 
     /*
     Ok((input, Self {
