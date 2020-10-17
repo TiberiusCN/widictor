@@ -6,7 +6,7 @@ use std::io::Read;
 
 lazy_static::lazy_static! {
   static ref TEMPLATES: HashMap<String, std::path::PathBuf> = {
-    let config_path = directories::ProjectDirs::from("com", "APQM", "widictor").unwrap().config_dir().join("templates.conf");
+    let config_path = directories::ProjectDirs::from("com", "apqm", "widictor").unwrap().config_dir().join("templates.conf");
     println!("{}", config_path.display());
     let x_dir = directories::BaseDirs::new().unwrap().executable_dir().unwrap().to_owned();
     let f = std::fs::read_to_string(config_path).unwrap();
@@ -280,6 +280,7 @@ enum Section {
   Antonyms,
   Determiner,
   Contraction,
+  Inflection,
   
   Conjunction,
   Noun,
@@ -307,16 +308,15 @@ impl Section {
   fn species(&self) -> Option<usize> {
     Some(match self {
       Self::Conjunction | Self::Noun | Self::Verb | Self::Adjective | Self::Participle | Self::Preposition | Self::Pronoun | Self::Interjection | Self::Adverb | Self::Numeral | Self::Particle => 0,
-      Self::Declension => 1,
+      Self::Declension | Self::Conjugation | Self::Inflection => 1,
       Self::DerivedTerms => 2,
       Self::RelatedTerms => 3,
       Self::Descendants => 4,
       Self::Etymology => 5,
       Self::Pronunciation => 6,
-      Self::Conjugation => 7,
-      Self::UsageNotes => 8,
-      Self::Synonyms => 9,
-      Self::Antonyms => 10,
+      Self::UsageNotes => 7,
+      Self::Synonyms => 8,
+      Self::Antonyms => 9,
 
       Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Determiner | Self::Contraction => return None,
     })
@@ -325,7 +325,7 @@ impl Section {
   fn general_species(&self) -> Option<SectionSpecies> {
     Some(match self {
       Self::Conjunction | Self::Noun | Self::Verb | Self::Adjective | Self::Participle | Self::Preposition | Self::Pronoun | Self::Interjection | Self::Adverb | Self::Numeral | Self::Particle => SectionSpecies::Word,
-      Self::Declension | Self::Conjugation => SectionSpecies::Mutation,
+      Self::Declension | Self::Conjugation | Self::Inflection => SectionSpecies::Mutation,
       Self::DerivedTerms | Self::RelatedTerms | Self::Descendants | Self::Synonyms | Self::Antonyms => SectionSpecies::Provided,
       Self::Etymology => SectionSpecies::Etymology,
       Self::Pronunciation => SectionSpecies::Pronunciation,
@@ -337,7 +337,7 @@ impl Section {
 
   fn tag(&self) -> Option<&'static str> {
     match self {
-      Self::Declension | Self::DerivedTerms | Self::RelatedTerms | Self::Descendants | Self::SeeAlso | Self::Etymology | Self::Pronunciation | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Conjugation | Self::UsageNotes | Self::Translations | Self::Anagrams | Self::Synonyms | Self::Antonyms | Self::Determiner | Self::Contraction => None,
+      Self::Declension | Self::DerivedTerms | Self::RelatedTerms | Self::Descendants | Self::SeeAlso | Self::Etymology | Self::Pronunciation | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Conjugation | Self::UsageNotes | Self::Translations | Self::Anagrams | Self::Synonyms | Self::Antonyms | Self::Determiner | Self::Contraction | Self::Inflection => None,
 
       Self::Conjunction => Some("conjunction"),
       Self::Noun => Some("noun"),
@@ -397,6 +397,7 @@ impl WordSection {
       else if value.starts_with("Antonyms") { Section::Antonyms }
       else if value.starts_with("Determiner") { Section::Determiner }
       else if value.starts_with("Contraction") { Section::Contraction }
+      else if value.starts_with("Inflection") { Section::Inflection }
 
       else if value.starts_with("Noun") { Section::Noun }
       else if value.starts_with("Proper noun") { Section::Noun }
@@ -610,13 +611,17 @@ impl Text {
         input = tail;
       } else {
         if let Ok((tail, link)) = Self::link(input) {
-          let mut splits = link.split('|');
+          let splits = link.split('|');
+          let mut splits = splits.map(|l| {
+            l.split('#').next().unwrap()
+          }).collect::<Vec<_>>().into_iter();
           let sub = splits.next().unwrap();
           if let Some(form) = splits.next() {
             subs.insert(sub.to_owned());
             data += form;
+          } else {
+            data += sub;
           }
-          data += sub;
           input = tail;
         } else {
           let mut chars = input.chars();
