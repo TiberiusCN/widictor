@@ -1,9 +1,9 @@
 [workspace]
 members = [
   "widictor",
-  "templates/noun",
-  "templates/verb",
-  "templates/inflection_of",
+  #"templates/noun",
+  #"templates/verb",
+  "templates/derived",
   "template",
   "mediawiki",
 ]
