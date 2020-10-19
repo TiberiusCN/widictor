@@ -4,27 +4,26 @@ use std::collections::HashMap;
 
 fn main() {
   let mut params: Params = serde_json::from_reader(std::io::stdin()).unwrap();
-  eprintln!("com: {}, src: {:#?}", params.com, params.args);
-  let (lang, lemma, mut alt, gloss) = match params.com.as_str() {
+  let (lang, lemma, mut alt, gloss, valueable) = match params.com.as_str() {
     "inflection of" => {
       let lang = params.args.remove("1").unwrap()[0].to_owned();
       let lemma = params.args.remove("2").unwrap()[0].to_owned();
       let alt = params.args.remove("3").map(|v| v[0].to_owned());
-      (lang, lemma, alt, None)
+      (lang, lemma, alt, None, false)
     },
     "noncognate" | "noncog" | "cog" | "cognate" | "desc" | "descendant" | "link" | "l" | "mention" | "m" | "l-self" | "m-self" | "ll" => {
       let lang = params.args.remove("1").unwrap()[0].to_owned();
       let lemma = params.args.remove("2").unwrap()[0].to_owned();
       let alt = params.args.remove("3").or_else(|| params.args.remove("alt")).map(|v| v[0].to_owned());
       let gloss = params.args.remove("4").or_else(|| params.args.remove("gloss")).or_else(|| params.args.remove("t")).map(|v| v[0].to_owned());
-      (lang, lemma, alt, gloss)
+      (lang, lemma, alt, gloss, true)
     },
     "inherited" | "inh" | "derived" | "der" | "bor" | "borrowed" => {
       let lang = params.args.remove("2").unwrap()[0].to_owned();
       let lemma = params.args.remove("3").unwrap()[0].to_owned();
       let alt = params.args.remove("4").or_else(|| params.args.remove("alt")).map(|v| v[0].to_owned());
       let gloss = params.args.remove("5").or_else(|| params.args.remove("gloss")).or_else(|| params.args.remove("t")).map(|v| v[0].to_owned());
-      (lang, lemma, alt, gloss)
+      (lang, lemma, alt, gloss, true)
     },
     x => panic!("unsupported template: {}", x),
   };
@@ -43,12 +42,9 @@ fn main() {
   let value = alt.or_else(|| value);
   let gloss = gloss.map(|v| format!(": {}", v)).unwrap_or_default();
   let value = value.map(|value|format!("{{{} ({}{})}}", value, lang, gloss));
-  if let Some(value) = value.as_ref() {
-    eprintln!("\x1b[32m{}\x1b[0m", value);
-  };
   serde_json::to_writer(std::io::stdout(), &Word {
     subwords,
-    value,
+    value: if valueable { value } else { None },
     .. Default::default()
   }).unwrap()
 }

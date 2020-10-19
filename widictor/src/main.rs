@@ -217,7 +217,28 @@ impl Wiki {
     for word in subwords {
       subs.insert(word);
     }
-    panic!("SUBS: {:?}\nWords:\n{:#?}", subs, words);
+    print!("subs:");
+    for i in subs {
+      print!(" {}", i);
+    }
+    println!("");
+    for (lang, words) in words {
+      println!("LANG: {}", lang);
+      for word in words {
+        println!("WORD");
+        print!("tags:");
+        for tag in word.tags {
+          print!(" {}", tag);
+        }
+        println!("");
+        println!("value:\n{}", word.value.unwrap());
+        println!("properties:");
+        for property in word.properties {
+          println!("  {} — {}", property.0, property.1);
+        }
+      }
+    }
+    panic!()
 
     /*
     Ok((input, Self {
@@ -466,7 +487,7 @@ impl Piece {
             .spawn()
           {
             Err(e) => {
-              eprintln!("template {} failed: {}", map.com, e);
+              eprint!("template {} failed: {}", map.com, e);
               return;
             },
             Ok(v) => v,
@@ -478,7 +499,7 @@ impl Piece {
           let com = com.wait().unwrap();
           let mut err = String::new();
           let _ = stderr.read_to_string(&mut err).map_err(|e| eprintln!("bad stderr: {}", e));
-          if !err.is_empty() { eprintln!("template {}: {}", map.com, err); }
+          if !err.is_empty() { eprint!("template {}: {}", map.com, err); }
           if !com.success() { eprintln!("template {} failed with {:?}", map.com, com.code()); return; }
 
           if let Ok(new_lemma) = serde_json::from_reader(stdout).map_err(|e| eprintln!("bad json from {}: {}", map.com, e)) {
@@ -509,7 +530,20 @@ impl Text {
     map!(
       delimited!(
         Self::template_open,
-        take_while1!(|c: char| c != '}'),
+        |input: &str| -> IResult<&str, &str, WikiError<&str>> {
+          let mut q = 2;
+          for (id, c) in input.chars().enumerate() {
+            if c == '{' { q += 1; }
+            else if c == '}' { q -= 1; }
+            if q == 0 {
+              println!("{}: {} → {}", input, &input[0..id], &input[id+1..]);
+              // ToDo : Bad Char Position
+              return Ok((&input[0..id], &input[id..]));
+            }
+          }
+          Err(nom::Err::Failure(WikiError::OpenNotMatchesClose))
+        },
+        //take_while1!(|c: char| c != '}'),
         Self::template_close
       ),
       |s| {
