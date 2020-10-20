@@ -164,21 +164,23 @@ impl Combinator {
                             quote = 0;
                             new_line.push(c);
                           }
-                          match quote {
-                            0 => {},
-                            1 => new_line.push('\''),
-                            2 => new_line.push('"'),
-                            3 => new_line.push('_'),
-                            c => panic!("overquoted: {}", c),
-                          }
+                        }
+                        match quote {
+                          0 => {},
+                          1 => new_line.push('\''),
+                          2 => new_line.push('"'),
+                          3 => new_line.push('_'),
+                          c => panic!("overquoted: {}", c),
                         }
                         if !new_line.is_empty() {
                           if deep > 1 {
+                            out.push('{');
                             out.push('[');
                           }
                           out += &new_line;
                           if deep > 1 {
                             out.push(']');
+                            out.push('}');
                           }
                           out.push('\n');
                         }

@@ -40,7 +40,7 @@ fn main() {
   };
   let value = if lemma.is_empty() { None } else { Some(lemma.clone()) };
   let value = alt.or_else(|| value);
-  let gloss = gloss.map(|v| format!(": {}", v)).unwrap_or_default();
+  let gloss = gloss.map(|v| format!(": }}{}{{", v)).unwrap_or_default();
   let value = value.map(|value|format!("{{{} ({}{})}}", value, lang, gloss));
   serde_json::to_writer(std::io::stdout(), &Word {
     subwords,
