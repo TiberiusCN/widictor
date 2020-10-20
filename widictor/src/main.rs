@@ -532,18 +532,20 @@ impl Text {
         Self::template_open,
         |input: &str| -> IResult<&str, &str, WikiError<&str>> {
           let mut q = 2;
-          for (id, c) in input.chars().enumerate() {
+          let mut end = 0;
+          for c in input.chars() {
             if c == '{' { q += 1; }
             else if c == '}' { q -= 1; }
+            else { end += c.len_utf8() };
             if q == 0 {
-              println!("{}: {} → {}", input, &input[0..id], &input[id+1..]);
-              // ToDo : Bad Char Position
-              return Ok((&input[0..id], &input[id..]));
+              let data = &input[0..end];
+              let tail = &input[end..];
+              println!("\x1b[31m{}\x1b[32m{}\x1b[0m", data, tail);
+              return Ok((tail, data));
             }
           }
-          Err(nom::Err::Failure(WikiError::OpenNotMatchesClose))
+          Err(nom::Err::Error(WikiError::OpenNotMatchesClose))
         },
-        //take_while1!(|c: char| c != '}'),
         Self::template_close
       ),
       |s| {
