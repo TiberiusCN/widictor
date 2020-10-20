@@ -536,11 +536,11 @@ impl Text {
           for c in input.chars() {
             if c == '{' { q += 1; }
             else if c == '}' { q -= 1; }
-            else { end += c.len_utf8() };
+            end += c.len_utf8();
             if q == 0 {
+              end -= 2;
               let data = &input[0..end];
               let tail = &input[end..];
-              println!("\x1b[31m{}\x1b[32m{}\x1b[0m", data, tail);
               return Ok((tail, data));
             }
           }
