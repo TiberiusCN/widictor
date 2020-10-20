@@ -136,10 +136,63 @@ impl Combinator {
               if let Some(value) = value {
                 if let Some(species) = section.name.general_species() {
                   match species {
-                    SectionSpecies::Word => lemma.value = Some(value),
+                    SectionSpecies::Word => {
+                      let mut out = String::new();
+                      for mut line in value.lines() {
+                        let mut deep = 0;
+                        while let Some(subline) = line.strip_prefix("*") {
+                          deep += 1;
+                          line = subline;
+                        }
+                        line = line.trim();
+                        if deep == 2 && line.ends_with(':') {
+                          continue; // quotation source
+                        }
+                        let mut new_line = String::new();
+                        let mut quote = 0u32;
+                        for c in line.chars() {
+                          if c == '\'' {
+                            quote += 1;
+                          } else {
+                            match quote {
+                              0 => {},
+                              1 => new_line.push('\''),
+                              2 => new_line.push('"'),
+                              3 => new_line.push('_'),
+                              c => panic!("overquoted: {}", c),
+                            }
+                            quote = 0;
+                            new_line.push(c);
+                          }
+                          match quote {
+                            0 => {},
+                            1 => new_line.push('\''),
+                            2 => new_line.push('"'),
+                            3 => new_line.push('_'),
+                            c => panic!("overquoted: {}", c),
+                          }
+                        }
+                        if !new_line.is_empty() {
+                          if deep > 1 {
+                            out.push('[');
+                          }
+                          out += &new_line;
+                          if deep > 1 {
+                            out.push(']');
+                          }
+                          out.push('\n');
+                        }
+                      }
+                      if let Some(l) = out.pop() {
+                        if l != '\n' {
+                          out.push('\n');
+                        }
+                      }
+                      lemma.value = Some(out)
+                    },
                     SectionSpecies::Etymology => { lemma.properties.insert("etymology".to_owned(), value); },
                     SectionSpecies::Mutation => { lemma.properties.insert("mutation notes".to_owned(), value); },
-                    SectionSpecies::Pronunciation => { lemma.properties.insert("pronunciation".to_owned(), value); },
+                    SectionSpecies::Pronunciation => {},// lemma.properties.insert("pronunciation".to_owned(), value); },
                     SectionSpecies::Provided => {},
                     SectionSpecies::UsageNotes => { lemma.properties.insert("usage notes".to_owned(), value); },
                   }
@@ -520,12 +573,13 @@ enum Text {
 }
 
 impl Text {
-  named!(list_mark<&str, &str, WikiError<&str>>, alt!(tag!("#") | tag!("*")));
   named!(template_open<&str, &str, WikiError<&str>>, tag!("{{"));
   named!(template_separator<&str, &str, WikiError<&str>>, tag!("|"));
   named!(template_close<&str, &str, WikiError<&str>>, tag!("}}"));
   named!(link_open<&str, &str, WikiError<&str>>, tag!("[["));
   named!(link_close<&str, &str, WikiError<&str>>, tag!("]]"));
+  named!(external_link_open<&str, &str, WikiError<&str>>, tag!("["));
+  named!(external_link_close<&str, &str, WikiError<&str>>, tag!("]"));
   named!(template<&str, (Vec<Option<String>>, Vec<Vec<String>>), WikiError<&str>>,
     map!(
       delimited!(
@@ -598,6 +652,7 @@ impl Text {
     )
   );
   named!(link<&str, &str, WikiError<&str>>, delimited!(Self::link_open, take_while1!(|c: char| c != ']'), Self::link_close));
+  named!(external_link<&str, &str, WikiError<&str>>, delimited!(Self::external_link_open, take_while1!(|c: char| c != ']'), Self::external_link_close));
   named!(wrapped_template<&str, Piece, WikiError<&str>>, map!(Self::template, |(headers, values)| {
     let mut id = 0;
     let mut data: HashMap<String, Vec<String>> = headers.into_iter().zip(values.into_iter()).map(|(header, values)| {
@@ -615,7 +670,7 @@ impl Text {
       args: data,
     })
   }));
-  named!(list<&str, usize, WikiError<&str>>, map!(take_while1!(|c| c == '#' || c == '*'), |r| r.len()));
+  named!(list<&str, usize, WikiError<&str>>, map!(take_while1!(|c| c == '#' || c == '*' || c == ':'), |r| r.len())); // it works only in the beginning
 
   fn parse<'a>(mut input: &'a str, subs: &mut HashSet<String>) -> IResult<&'a str, Self, WikiError<&'a str>> {
     let list = Self::list(input).map(|(tail, deep)| {
@@ -660,6 +715,8 @@ impl Text {
             data += sub;
           }
           input = tail;
+        } else if let Ok((tail, _link)) = Self::external_link(input) {
+          input = tail;
         } else {
           let mut chars = input.chars();
           data.push(chars.next().unwrap());
@@ -689,7 +746,7 @@ impl Text {
       },
       Self::List(level, texts) => {
         let mut prefix = String::new();
-        for _ in 0..*level { prefix.push('*'); }
+        for _ in 0..*level { prefix += "*"; }
         prefix.push(' ');
         for text in texts {
           text.text(&prefix, lemma, "\n");
@@ -751,3 +808,7 @@ impl Word {
     }
   }
 }
+
+// {} — hide from translation
+// [] — hide in tests
+// _x_ — this word
