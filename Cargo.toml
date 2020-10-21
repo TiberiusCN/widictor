@@ -4,6 +4,7 @@ members = [
   #"templates/noun",
   #"templates/verb",
   "templates/derived",
+  "database",
   "template",
   "mediawiki",
 ]
