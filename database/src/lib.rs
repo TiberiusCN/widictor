@@ -27,11 +27,20 @@ impl Word {
   pub fn forms(&self) -> Result<HashMap<String, String>, Error> {
     self.base.word_forms(self.word)
   }
+  pub fn properties(&self) -> Result<HashMap<String, String>, Error> {
+    self.base.word_properties(self.word)
+  }
+  pub fn property(&self, property: &str) -> Result<String, Error> {
+    self.base.word_property(self.word, property)
+  }
   pub fn insert_tag(&mut self, tag: &str) -> Result<(), Error> {
     self.base.insert_tag(self.word, tag)
   }
   pub fn insert_form(&mut self, form: &str, value: &str) -> Result<(), Error> {
     self.base.insert_form(self.word, form, value)
+  }
+  pub fn insert_property(&mut self, property: &str, value: &str) -> Result<(), Error> {
+    self.base.insert_property(self.word, property, value)
   }
 }
 
@@ -106,13 +115,24 @@ impl Base {
       )?;
       // properties
       connection.execute(
+        "CREATE TABLE properties (
+          id INTEGER PRIMARY KEY,
+          property TEXT NOT NULL UNIQUE
+        )",
+        params![]
+      )?;
+      connection.execute(
         "CREATE TABLE word_properties (
           word INTEGER,
-          property TEXT NOT NULL,
+          property INTEGER,
           value TEXT NOT NULL,
           PRIMARY KEY (word, property),
           FOREIGN KEY (word)
             REFERENCES words (id)
+              ON DELETE CASCADE
+              ON UPDATE NO ACTION,
+          FOREIGN KEY (property)
+            REFERENCES properties (id)
               ON DELETE CASCADE
               ON UPDATE NO ACTION
         )",
@@ -160,6 +180,16 @@ impl Base {
     self.search_form(form)
   }
 
+  fn new_property(&mut self, property: &str) -> Result<i64, Error> {
+    self.connection.write().unwrap().execute(
+      "INSERT INTO properties (property) VALUES (?1)",
+      params![
+        property,
+      ]
+    )?;
+    self.search_property(property)
+  }
+
   pub fn search_word(&self, word: &str) -> Result<Word, Error> {
     let word = {
       let connection = self.connection.read().unwrap();
@@ -189,7 +219,7 @@ impl Base {
       let connection = self.connection.read().unwrap();
       let mut stmt = connection.prepare(
         "SELECT id FROM words
-        INNER JOIN word_forms ON word_forms.word = words.word
+        INNER JOIN word_forms ON word_forms.word = words.id
         WHERE word_forms.value = ?1")?;
       let mut iter = stmt.query_map(params![word], |row| -> Result<i64, rusqlite::Error> {
         row.get(0)
@@ -218,6 +248,15 @@ impl Base {
       row.get(0)
     })?;
     Ok(iter.next().ok_or_else(|| Error::ValueNotFound(form.to_owned(), "form"))??)
+  }
+
+  fn search_property(&self, property: &str) -> Result<i64, Error> {
+    let connection = self.connection.read().unwrap();
+    let mut stmt = connection.prepare("SELECT id FROM properties WHERE property = ?1")?;
+    let mut iter = stmt.query_map(params![property], |row| -> Result<i64, rusqlite::Error> {
+      row.get(0)
+    })?;
+    Ok(iter.next().ok_or_else(|| Error::ValueNotFound(property.to_owned(), "property"))??)
   }
 
   fn insert_tag(&mut self, word: i64, tag: &str) -> Result<(), Error> {
@@ -253,6 +292,23 @@ impl Base {
     Ok(())
   }
 
+  fn insert_property(&mut self, word: i64, property: &str, value: &str) -> Result<(), Error> {
+    let property = match self.search_property(property) {
+      Ok(id) => id,
+      Err(Error::ValueNotFound(..)) => self.new_property(property)?,
+      Err(e) => return Err(e),
+    };
+    self.connection.write().unwrap().execute(
+      "INSERT INTO word_properties (word, property, value) VALUES (?1, ?2, ?3)",
+      params![
+        word,
+        property,
+        value,
+      ]
+    )?;
+    Ok(())
+  }
+
   fn word_tags(&self, word: i64) -> Result<Vec<String>, Error> {
     let connection = self.connection.read().unwrap();
     let mut stmt = connection.prepare(
@@ -275,6 +331,30 @@ impl Base {
       Ok((row.get(0)?, row.get(1)?))
     })?;
     Ok(iter.collect::<Result<HashMap<String, String>, _>>()?)
+  }
+
+  fn word_properties(&self, word: i64) -> Result<HashMap<String, String>, Error> {
+    let connection = self.connection.read().unwrap();
+    let mut stmt = connection.prepare(
+      "SELECT properties.property, word_properties.value FROM properties
+        INNER JOIN word_properties ON word_properties.property = properties.id
+        WHERE word_properties.word = ?1")?;
+    let iter = stmt.query_map(params![word], |row| -> Result<(String, String), rusqlite::Error> {
+      Ok((row.get(0)?, row.get(1)?))
+    })?;
+    Ok(iter.collect::<Result<HashMap<String, String>, _>>()?)
+  }
+
+  fn word_property(&self, word: i64, property: &str) -> Result<String, Error> {
+    let connection = self.connection.read().unwrap();
+    let mut stmt = connection.prepare(
+      "SELECT word_properties.value FROM properties
+        INNER JOIN word_properties ON word_properties.property = properties.id
+        WHERE (word_properties.word, properties.property) = (?1, ?2)")?;
+    let mut iter = stmt.query_map(params![word, property], |row| -> Result<String, rusqlite::Error> {
+      row.get(0)
+    })?;
+    Ok(iter.next().ok_or_else(|| Error::ValueNotFound(word.to_string(), "property"))??)
   }
 
   fn word_value(&self, word: i64) -> Result<String, Error> {
@@ -300,10 +380,14 @@ mod test {
     word.insert_tag("neuter").unwrap();
     word.insert_form("AccSg", "wordem").unwrap();
     word.insert_form("VocSg", "wordi").unwrap();
+    word.insert_property("etymology", "from word with \"").unwrap();
+    word.insert_property("gender", "neuter").unwrap();
     println!("{:?}", word.value().unwrap());
     println!("{:?}", word.tags().unwrap());
     println!("{:?}", word.forms().unwrap());
-    println!("{:?}", base.search_word_or_form("word").unwrap().value().unwrap());
+    println!("{:?}", word.properties().unwrap());
+    println!("{:?}", base.search_word_or_form("wörd").unwrap().value().unwrap());
     println!("{:?}", base.search_word_or_form("wordem").unwrap().value().unwrap());
+    println!("{:?}", word.property("etymology").unwrap());
   }
 }
