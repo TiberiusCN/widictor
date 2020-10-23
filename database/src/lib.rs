@@ -36,11 +36,26 @@ impl Word {
   pub fn insert_tag(&mut self, tag: &str) -> Result<(), Error> {
     self.base.insert_tag(self.word, tag)
   }
+  pub fn insert_derived(&mut self, word: &str) -> Result<(), Error> {
+    self.base.insert_derived(self.word, word)
+  }
+  pub fn insert_produced(&mut self, word: &str) -> Result<(), Error> {
+    self.base.insert_produced(self.word, word)
+  }
   pub fn insert_form(&mut self, form: &str, value: &str) -> Result<(), Error> {
     self.base.insert_form(self.word, form, value)
   }
   pub fn insert_property(&mut self, property: &str, value: &str) -> Result<(), Error> {
     self.base.insert_property(self.word, property, value)
+  }
+  pub fn key(&self) -> i64 {
+    self.word
+  }
+  pub fn derived(&self) -> Result<Vec<Word>, Error> {
+    self.base.word_derived(self.word)
+  }
+  pub fn produced(&self) -> Result<Vec<Word>, Error> {
+    self.base.word_produced(self.word)
   }
 }
 
@@ -138,6 +153,23 @@ impl Base {
         )",
         params![]
       )?;
+      // links
+      connection.execute(
+        "CREATE TABLE word_links (
+          word INTEGER,
+          etymology INTEGER,
+          PRIMARY KEY (word, etymology),
+          FOREIGN KEY (word)
+            REFERENCES words (id)
+              ON DELETE CASCADE
+              ON UPDATE NO ACTION,
+          FOREIGN KEY (etymology)
+            REFERENCES words (id)
+              ON DELETE CASCADE
+              ON UPDATE NO ACTION
+        )",
+        params![]
+      )?;
     }
     Ok(me)
   }
@@ -203,6 +235,13 @@ impl Base {
       word,
       base: self.clone(),
     })
+  }
+
+  pub fn get_word(&self, word: i64) -> Word {
+    Word {
+      word,
+      base: self.clone(),
+    }
   }
 
   pub fn search_word_or_form(&self, word: &str) -> Result<Word, Error> {
@@ -292,6 +331,33 @@ impl Base {
     Ok(())
   }
 
+  fn insert_derived(&mut self, word: i64, derived: &str) -> Result<(), Error> {
+    let parent = match self.search_word(derived) {
+      Ok(id) => id,
+      Err(Error::ValueNotFound(..)) => return Ok(()),
+      Err(e) => return Err(e),
+    };
+    self.insert_link(parent.word, word)
+  }
+  fn insert_produced(&mut self, word: i64, produced: &str) -> Result<(), Error> {
+    let child = match self.search_word(produced) {
+      Ok(id) => id,
+      Err(Error::ValueNotFound(..)) => return Ok(()),
+      Err(e) => return Err(e),
+    };
+    self.insert_link(word, child.word)
+  }
+  fn insert_link(&mut self, parent: i64, child: i64) -> Result<(), Error> {
+    self.connection.write().unwrap().execute(
+      "INSERT INTO word_links (word, etymology) VALUES (?1, ?2)",
+      params![
+        child,
+        parent,
+      ]
+    )?;
+    Ok(())
+  }
+
   fn insert_property(&mut self, word: i64, property: &str, value: &str) -> Result<(), Error> {
     let property = match self.search_property(property) {
       Ok(id) => id,
@@ -319,6 +385,27 @@ impl Base {
       row.get(0)
     })?;
     Ok(iter.collect::<Result<Vec<_>, _>>()?)
+  }
+
+  fn word_derived(&self, word: i64) -> Result<Vec<Word>, Error> {
+    let connection = self.connection.read().unwrap();
+    let mut stmt = connection.prepare(
+      "SELECT word_links.etymology FROM word_links
+        WHERE word_links.word = ?1")?;
+    let iter = stmt.query_map(params![word], |row| -> Result<i64, rusqlite::Error> {
+      row.get(0)
+    })?;
+    Ok(iter.map(|v: Result<i64, rusqlite::Error>| -> Result<Word, Error> { Ok(Word { word: v?, base: self.clone() })}).collect::<Result<Vec<_>, _>>()?)
+  }
+  fn word_produced(&self, word: i64) -> Result<Vec<Word>, Error> {
+    let connection = self.connection.read().unwrap();
+    let mut stmt = connection.prepare(
+      "SELECT word_links.word FROM word_links
+        WHERE word_links.etymology = ?1")?;
+    let iter = stmt.query_map(params![word], |row| -> Result<i64, rusqlite::Error> {
+      row.get(0)
+    })?;
+    Ok(iter.map(|v: Result<i64, rusqlite::Error>| -> Result<Word, Error> { Ok(Word { word: v?, base: self.clone() })}).collect::<Result<Vec<_>, _>>()?)
   }
 
   fn word_forms(&self, word: i64) -> Result<HashMap<String, String>, Error> {

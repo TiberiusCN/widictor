@@ -115,7 +115,7 @@ impl Combinator {
     self.texts.push(text);
   }
 
-  fn build(&self, languages: &[String]) -> (HashMap<String, Vec<Lemma>>, HashSet<String>) {
+  fn build(&self, languages: &[String]) -> (HashMap<String, Vec<Lemma>>, HashSet<String>, HashSet<String>) {
     if self.last_language != None { panic!("unfinished"); }
 
     let mut out_words = HashMap::new();
@@ -135,7 +135,7 @@ impl Combinator {
               let value = lemma.value.take();
               if let Some(value) = value {
                 if let Some(species) = section.name.general_species() {
-                  match species {
+                  let target_subs = match species {
                     SectionSpecies::Word => {
                       let mut out = String::new();
                       for mut line in value.lines() {
@@ -190,13 +190,29 @@ impl Combinator {
                           out.push('\n');
                         }
                       }
-                      lemma.value = Some(out)
+                      lemma.value = Some(out);
+
+                      derived
                     },
-                    SectionSpecies::Etymology => { lemma.properties.insert("etymology".to_owned(), value); },
-                    SectionSpecies::Mutation => { lemma.properties.insert("mutation notes".to_owned(), value); },
-                    SectionSpecies::Pronunciation => {},// lemma.properties.insert("pronunciation".to_owned(), value); },
-                    SectionSpecies::Provided => {},
-                    SectionSpecies::UsageNotes => { lemma.properties.insert("usage notes".to_owned(), value); },
+                    SectionSpecies::Etymology => {
+                      lemma.properties.insert("etymology".to_owned(), value);
+                      derived
+                    },
+                    SectionSpecies::Mutation => {
+                      lemma.properties.insert("mutation notes".to_owned(), value);
+                      derived
+                    },
+                    SectionSpecies::Pronunciation => {
+                      // lemma.properties.insert("pronunciation".to_owned(), value); },
+                      derived
+                    },
+                    SectionSpecies::Provided => {
+                      produced
+                    },
+                    SectionSpecies::UsageNotes => {
+                      lemma.properties.insert("usage notes".to_owned(), value);
+                      produced
+                    },
                   }
                 }
               }
