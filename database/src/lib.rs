@@ -75,7 +75,7 @@ impl Base {
       connection.execute(
         "CREATE TABLE words (
           id INTEGER PRIMARY KEY,
-          word TEXT NOT NULL UNIQUE,
+          word TEXT NOT NULL,
           value TEXT NOT NULL
         )",
         params![]
@@ -182,59 +182,68 @@ impl Base {
   }
 
   pub fn insert_word(&mut self, word: &str, value: &str) -> Result<Word, Error> {
-    self.connection.write().unwrap().execute(
+    let connection = self.connection.write().unwrap();
+    connection.execute(
       "INSERT INTO words (word, value) VALUES (?1, ?2)",
       params![
         word,
         value,
       ]
     )?;
-    self.search_word(word)
+    let word = connection.last_insert_rowid();
+    Ok(Word {
+      word,
+      base: self.clone(),
+    })
   }
 
   fn new_tag(&mut self, tag: &str) -> Result<i64, Error> {
-    self.connection.write().unwrap().execute(
+    let connection = self.connection.write().unwrap();
+    connection.execute(
       "INSERT INTO tags (tag) VALUES (?1)",
       params![
         tag,
       ]
     )?;
-    self.search_tag(tag)
+    Ok(connection.last_insert_rowid())
   }
 
   fn new_form(&mut self, form: &str) -> Result<i64, Error> {
-    self.connection.write().unwrap().execute(
+    let connection = self.connection.write().unwrap();
+    connection.execute(
       "INSERT INTO forms (form) VALUES (?1)",
       params![
         form,
       ]
     )?;
-    self.search_form(form)
+    Ok(connection.last_insert_rowid())
   }
 
   fn new_property(&mut self, property: &str) -> Result<i64, Error> {
-    self.connection.write().unwrap().execute(
+    let connection = self.connection.write().unwrap();
+    connection.execute(
       "INSERT INTO properties (property) VALUES (?1)",
       params![
         property,
       ]
     )?;
-    self.search_property(property)
+    Ok(connection.last_insert_rowid())
   }
 
-  pub fn search_word(&self, word: &str) -> Result<Word, Error> {
-    let word = {
+  pub fn search_word(&self, word: &str) -> Result<Vec<Word>, Error> {
+    let words = {
       let connection = self.connection.read().unwrap();
       let mut stmt = connection.prepare("SELECT id FROM words WHERE word = ?1")?;
-      let mut iter = stmt.query_map(params![word], |row| -> Result<i64, rusqlite::Error> {
+      let iter = stmt.query_map(params![word], |row| -> Result<i64, rusqlite::Error> {
         row.get(0)
       })?;
-      iter.next().ok_or_else(|| Error::ValueNotFound(word.to_owned(), "word"))??
+      let words = iter.collect::<Result<Vec<_>, _>>()?;
+      if words.is_empty() {
+        return Err(Error::ValueNotFound(word.to_owned(), "word"));
+      }
+      words.into_iter().map(|word| Word { word, base: self.clone() }).collect()
     };
-    Ok(Word {
-      word,
-      base: self.clone(),
-    })
+    Ok(words)
   }
 
   pub fn get_word(&self, word: i64) -> Word {
@@ -244,7 +253,7 @@ impl Base {
     }
   }
 
-  pub fn search_word_or_form(&self, word: &str) -> Result<Word, Error> {
+  pub fn search_word_or_form(&self, word: &str) -> Result<Vec<Word>, Error> {
     match self.search_word(word) {
       Ok(s) => return Ok(s),
       Err(Error::ValueNotFound(..)) => {},
@@ -253,22 +262,23 @@ impl Base {
     self.search_form_of_word(word)
   }
 
-  pub fn search_form_of_word(&self, word: &str) -> Result<Word, Error> {
-    let word = {
+  pub fn search_form_of_word(&self, word: &str) -> Result<Vec<Word>, Error> {
+    let words = {
       let connection = self.connection.read().unwrap();
       let mut stmt = connection.prepare(
         "SELECT id FROM words
         INNER JOIN word_forms ON word_forms.word = words.id
         WHERE word_forms.value = ?1")?;
-      let mut iter = stmt.query_map(params![word], |row| -> Result<i64, rusqlite::Error> {
+      let iter = stmt.query_map(params![word], |row| -> Result<i64, rusqlite::Error> {
         row.get(0)
       })?;
-      iter.next().ok_or_else(|| Error::ValueNotFound(word.to_owned(), "word form"))??
+      let words = iter.collect::<Result<Vec<_>, _>>()?;
+      if words.is_empty() {
+        return Err(Error::ValueNotFound(word.to_owned(), "word form"));
+      }
+      words.into_iter().map(|word| Word { word, base: self.clone() }).collect()
     };
-    Ok(Word {
-      word,
-      base: self.clone(),
-    })
+    Ok(words)
   }
 
   fn search_tag(&self, tag: &str) -> Result<i64, Error> {
@@ -332,20 +342,26 @@ impl Base {
   }
 
   fn insert_derived(&mut self, word: i64, derived: &str) -> Result<(), Error> {
-    let parent = match self.search_word(derived) {
+    let parents = match self.search_word(derived) {
       Ok(id) => id,
       Err(Error::ValueNotFound(..)) => return Ok(()),
       Err(e) => return Err(e),
     };
-    self.insert_link(parent.word, word)
+    for parent in parents {
+      self.insert_link(parent.word, word)?;
+    }
+    Ok(())
   }
   fn insert_produced(&mut self, word: i64, produced: &str) -> Result<(), Error> {
-    let child = match self.search_word(produced) {
+    let children = match self.search_word(produced) {
       Ok(id) => id,
       Err(Error::ValueNotFound(..)) => return Ok(()),
       Err(e) => return Err(e),
     };
-    self.insert_link(word, child.word)
+    for child in children {
+      self.insert_link(word, child.word)?;
+    }
+    Ok(())
   }
   fn insert_link(&mut self, parent: i64, child: i64) -> Result<(), Error> {
     self.connection.write().unwrap().execute(
@@ -463,18 +479,33 @@ mod test {
     let mut base = Base::create(&std::path::Path::new("/tmp/lang.db")).unwrap();
     base.insert_word("word", "value").unwrap();
     let mut word = base.insert_word("wörd", "translate").unwrap();
-    word.insert_tag("noun").unwrap();
-    word.insert_tag("neuter").unwrap();
-    word.insert_form("AccSg", "wordem").unwrap();
-    word.insert_form("VocSg", "wordi").unwrap();
-    word.insert_property("etymology", "from word with \"").unwrap();
-    word.insert_property("gender", "neuter").unwrap();
-    println!("{:?}", word.value().unwrap());
-    println!("{:?}", word.tags().unwrap());
-    println!("{:?}", word.forms().unwrap());
-    println!("{:?}", word.properties().unwrap());
-    println!("{:?}", base.search_word_or_form("wörd").unwrap().value().unwrap());
-    println!("{:?}", base.search_word_or_form("wordem").unwrap().value().unwrap());
-    println!("{:?}", word.property("etymology").unwrap());
+    let tags = vec!["noun".to_owned(), "neuter".to_owned()];
+    for tag in &tags {
+      word.insert_tag(&tag).unwrap();
+    }
+    let mut forms = HashMap::new();
+    forms.insert("AccSg".to_string(), "wordem".to_string());
+    forms.insert("VocSg".to_string(), "wordi".to_string());
+    for form in &forms {
+      word.insert_form(form.0.as_str(), form.1.as_str()).unwrap();
+    }
+    let mut properties = HashMap::new();
+    properties.insert("etymology".to_string(), "word + \"".to_string());
+    properties.insert("gender".to_string(), "neuter".to_string());
+    for property in &properties {
+      word.insert_property(property.0.as_str(), property.1.as_str()).unwrap();
+    }
+
+    assert_eq!(word.value().unwrap().as_str(), "translate");
+    assert_eq!(word.tags().unwrap(), tags);
+    assert_eq!(word.forms().unwrap(), forms);
+    assert_eq!(word.properties().unwrap(), properties);
+    let words = base.search_word_or_form("wörd").unwrap();
+    let words: Vec<_> = words.into_iter().map(|w| w.value().unwrap()).collect();
+    assert_eq!(words, vec!["translate".to_string()]);
+    let words = base.search_word_or_form("wordem").unwrap();
+    let words: Vec<_> = words.into_iter().map(|w| w.value().unwrap()).collect();
+    assert_eq!(words, vec!["translate".to_string()]);
+    assert_eq!(word.property("etymology").unwrap(), properties["etymology"]);
   }
 }

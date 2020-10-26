@@ -1,9 +1,23 @@
 use serde_derive::{Serialize, Deserialize};
 use std::collections::{HashMap, HashSet};
 
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum SectionSpecies {
+  Unknown,
+  Word,
+  Mutation,
+  Provided,
+  Etymology,
+  Pronunciation,
+  UsageNotes,
+}
+
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Word {
-  pub subwords: Vec<String>,
+  pub derived: HashSet<String>,
+  pub produced: HashSet<String>,
   pub mutation: Option<HashMap<String, String>>,
   pub tags: HashSet<String>,
   pub value: Option<String>,
@@ -11,8 +25,13 @@ pub struct Word {
 }
 
 impl std::ops::AddAssign for Word {
-  fn add_assign(&mut self, mut other: Self) {
-    self.subwords.append(&mut other.subwords);
+  fn add_assign(&mut self, other: Self) {
+    for derived in other.derived {
+      self.derived.insert(derived);
+    }
+    for produced in other.produced {
+      self.produced.insert(produced);
+    }
     if let Some(value) = other.value {
       self.append_value("", &value, "");
     }
@@ -40,8 +59,9 @@ impl Word {
   }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Params {
+  pub section: SectionSpecies,
   pub com: String,
   pub args: HashMap<String, Vec<String>>,
 }

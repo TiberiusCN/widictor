@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use nom::*;
 use nom::error::*;
-use template::{Word as Lemma, Params};
+use template::{Word as Lemma, Params, SectionSpecies};
 use std::io::Read;
 
 lazy_static::lazy_static! {
@@ -115,11 +115,13 @@ impl Combinator {
     self.texts.push(text);
   }
 
-  fn build(&self, languages: &[String]) -> (HashMap<String, Vec<Lemma>>, HashSet<String>, HashSet<String>) {
+  fn build(&self, languages: &[String]) -> (HashMap<String, Vec<Lemma>>, HashSet<String>) {
     if self.last_language != None { panic!("unfinished"); }
 
     let mut out_words = HashMap::new();
     let mut out_subwords = HashSet::new();
+
+    // ToDo: split phrase into words [derived]
 
     for language in languages {
       let mut words = Vec::new();
@@ -135,7 +137,8 @@ impl Combinator {
               let value = lemma.value.take();
               if let Some(value) = value {
                 if let Some(species) = section.name.general_species() {
-                  let target_subs = match species {
+                  match species {
+                    SectionSpecies::Unknown => {},
                     SectionSpecies::Word => {
                       let mut out = String::new();
                       for mut line in value.lines() {
@@ -191,27 +194,20 @@ impl Combinator {
                         }
                       }
                       lemma.value = Some(out);
-
-                      derived
                     },
                     SectionSpecies::Etymology => {
                       lemma.properties.insert("etymology".to_owned(), value);
-                      derived
                     },
                     SectionSpecies::Mutation => {
                       lemma.properties.insert("mutation notes".to_owned(), value);
-                      derived
                     },
                     SectionSpecies::Pronunciation => {
                       // lemma.properties.insert("pronunciation".to_owned(), value); },
-                      derived
                     },
                     SectionSpecies::Provided => {
-                      produced
                     },
                     SectionSpecies::UsageNotes => {
                       lemma.properties.insert("usage notes".to_owned(), value);
-                      produced
                     },
                   }
                 }
@@ -222,8 +218,8 @@ impl Combinator {
               word += lemma;
             }
           }
-          while let Some (subword) = word.subwords.pop() {
-            out_subwords.insert(subword);
+          for subword in word.derived.iter().chain(word.produced.iter()) {
+            out_subwords.insert(subword.to_owned());
           }
           if word.value.is_some() {
             words.push(word);
@@ -387,15 +383,6 @@ enum Section {
   Particle,
 }
 
-enum SectionSpecies {
-  Word,
-  Mutation,
-  Provided,
-  Etymology,
-  Pronunciation,
-  UsageNotes,
-}
-
 impl Section {
   fn species(&self) -> Option<usize> {
     Some(match self {
@@ -532,8 +519,9 @@ impl WordSection {
 
   fn text(&self) -> Lemma {
     let mut lemma = Lemma::default();
+    let section = self.name.general_species().unwrap_or(SectionSpecies::Unknown);
     for text in &self.content {
-      text.text(&mut lemma);
+      text.text(&mut lemma, &section);
     }
     lemma
   }
@@ -546,11 +534,13 @@ enum Piece {
 }
 
 impl Piece {
-  fn text(&self, prefix: &str, lemma: &mut Lemma, suffix: &str) {
+  fn text(&self, prefix: &str, lemma: &mut Lemma, suffix: &str, section: &SectionSpecies) {
     match self {
       Self::Raw(raw) => if !raw.is_empty() { lemma.append_value(prefix, raw, suffix); },
       Self::Template(map) => {
         if let Some(template) = TEMPLATES.get(&map.com) {
+          let mut map = map.clone();
+          map.section = *section;
           let mut com = match std::process::Command::new(template)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -684,6 +674,7 @@ impl Text {
 
     let com = data.remove("0").map(|v| v[0].clone()).unwrap_or_default();
     Piece::Template(Params {
+      section: SectionSpecies::Unknown,
       com,
       args: data,
     })
@@ -755,11 +746,11 @@ impl Text {
     Ok((input, text))
   }
 
-  fn text(&self, lemma: &mut Lemma) {
+  fn text(&self, lemma: &mut Lemma, section: &SectionSpecies) {
     match self {
       Self::Text(texts) => {
         for text in texts {
-          text.text("", lemma, "");
+          text.text("", lemma, "", section);
         }
       },
       Self::List(level, texts) => {
@@ -767,7 +758,7 @@ impl Text {
         for _ in 0..*level { prefix += "*"; }
         prefix.push(' ');
         for text in texts {
-          text.text(&prefix, lemma, "\n");
+          text.text(&prefix, lemma, "\n", section);
         }
       },
     }

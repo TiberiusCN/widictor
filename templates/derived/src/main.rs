@@ -1,6 +1,6 @@
 use template::*;
 use serde_derive::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 fn main() {
   let mut params: Params = serde_json::from_reader(std::io::stdin()).unwrap();
@@ -33,17 +33,23 @@ fn main() {
     }
   }
   let conv_lemma = convert_lemma(&lang, &lemma);
-  let (subwords, lemma) = if let Some(conv_lemma) = conv_lemma {
-    (vec![conv_lemma.clone()], conv_lemma)
+  let mut subwords = HashSet::new();
+  let lemma = if let Some(conv_lemma) = conv_lemma {
+    subwords.insert(conv_lemma.clone());
+    conv_lemma
   } else {
-    (Vec::new(), lemma)
+    lemma
   };
   let value = if lemma.is_empty() { None } else { Some(lemma.clone()) };
   let value = alt.or_else(|| value);
   let gloss = gloss.map(|v| format!(": }}{}{{", v)).unwrap_or_default();
   let value = value.map(|value|format!("{{{} ({}{})}}", value, lang, gloss));
+  let (derived, produced) = match params.section {
+    SectionSpecies::Etymology => (subwords, HashSet::new()),
+    _ => (HashSet::new(), subwords),
+  };
   serde_json::to_writer(std::io::stdout(), &Word {
-    subwords,
+    derived, produced,
     value: if valueable { value } else { None },
     .. Default::default()
   }).unwrap()
