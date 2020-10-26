@@ -1,6 +1,6 @@
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Weak, RwLock};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -507,5 +507,21 @@ mod test {
     let words: Vec<_> = words.into_iter().map(|w| w.value().unwrap()).collect();
     assert_eq!(words, vec!["translate".to_string()]);
     assert_eq!(word.property("etymology").unwrap(), properties["etymology"]);
+  }
+}
+
+pub struct Bases {
+  languages: Arc<RwLock<HashMap<String, Weak<Connection>>>>,
+}
+
+impl Bases {
+  pub fn new() -> Self {
+    Self {
+      languages: Arc::new(RwLock::new(HashMap::new())),
+    }
+  }
+
+  pub fn load_language(&self, lang_id: &str) -> Base {
+    unimplemented!()
   }
 }

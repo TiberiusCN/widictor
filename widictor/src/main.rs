@@ -3,6 +3,7 @@ use nom::*;
 use nom::error::*;
 use template::{Word as Lemma, Params, SectionSpecies};
 use std::io::Read;
+use database::*;
 
 lazy_static::lazy_static! {
   static ref TEMPLATES: HashMap<String, std::path::PathBuf> = {
@@ -115,7 +116,7 @@ impl Combinator {
     self.texts.push(text);
   }
 
-  fn build(&self, languages: &[String]) -> (HashMap<String, Vec<Lemma>>, HashSet<String>) {
+  fn build(&self, wiki: &Wiki) -> (HashMap<String, Vec<Lemma>>, HashSet<String>) {
     if self.last_language != None { panic!("unfinished"); }
 
     let mut out_words = HashMap::new();
@@ -123,7 +124,7 @@ impl Combinator {
 
     // ToDo: split phrase into words [derived]
 
-    for language in languages {
+    for language in wiki.languages {
       let mut words = Vec::new();
 
       if let Some(lang_value) = self.languages.get(language) {
@@ -133,7 +134,7 @@ impl Combinator {
           for section in &sections.sections {
             if let Some(section) = section.as_ref() {
               let section = &section.0;
-              let mut lemma = section.text();
+              let mut lemma = section.text(wiki);
               let value = lemma.value.take();
               if let Some(value) = value {
                 if let Some(species) = section.name.general_species() {
@@ -233,18 +234,37 @@ impl Combinator {
 }
 
 #[derive(Debug)]
-struct Wiki {
+struct Wiki<'lang> {
   word: String,
-  languages: HashMap<String, Language>,
-  content: Vec<Text>,
+  words: HashSet<String>,
+  languages: &'lang [String],
 }
 
-impl Wiki {
+impl<'lang> Wiki<'lang> {
   named!(section_ending<&str, &str, WikiError<&str>>, tag!("----"));
   named!(line_ending<&str, &str, WikiError<&str>>, tag!("\n"));
   named!(line<&str, &str, WikiError<&str>>, take_until!("\n"));
 
-  fn parse<'a>(mut input: &'a str, name: &str) -> IResult<&'a str, Self, WikiError<&'a str>> {
+  pub fn new(page: &str, languages: &'lang [String]) -> Self {
+    let mut words = HashSet::new();
+    words.insert(page.to_owned());
+    Self {
+      word: String::new(),
+      words,
+      languages,
+    }
+  }
+
+  fn parse(&mut self, bases: &Bases) -> Result<bool, String> {
+    let key = self.words.keys().next();
+    self.word = if let Some(word) = self.words.pop() {
+      word
+    } else {
+      return Ok(false);
+    };
+    let data = mediawiki::get(&self.word);
+    let mut input = data.as_str();
+
     let mut elements: Vec<Element> = Vec::new();
     let mut subs = HashSet::new();
 
@@ -280,9 +300,11 @@ impl Wiki {
 
     let combinator = combinator.finish();
 
-    let (words, subwords) = combinator.build(&["Latin".to_string(), "French".to_string(), "German".to_string(), "English".to_string()]);
+    let (words, subwords) = combinator.build(&self);
     for word in subwords {
       subs.insert(word);
+    }
+    for word in words {
     }
     print!("subs:");
     for i in subs {
@@ -517,11 +539,11 @@ impl WordSection {
     builder
   }
 
-  fn text(&self) -> Lemma {
+  fn text(&self, wiki: &Wiki) -> Lemma {
     let mut lemma = Lemma::default();
     let section = self.name.general_species().unwrap_or(SectionSpecies::Unknown);
     for text in &self.content {
-      text.text(&mut lemma, &section);
+      text.text(&mut lemma, &section, &wiki);
     }
     lemma
   }
@@ -534,7 +556,7 @@ enum Piece {
 }
 
 impl Piece {
-  fn text(&self, prefix: &str, lemma: &mut Lemma, suffix: &str, section: &SectionSpecies) {
+  fn text(&self, prefix: &str, lemma: &mut Lemma, suffix: &str, section: &SectionSpecies, wiki: &Wiki) {
     match self {
       Self::Raw(raw) => if !raw.is_empty() { lemma.append_value(prefix, raw, suffix); },
       Self::Template(map) => {
@@ -542,6 +564,7 @@ impl Piece {
           let mut map = map.clone();
           map.section = *section;
           let mut com = match std::process::Command::new(template)
+            .env("ENV_MAINWORD", &wiki.word)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -746,11 +769,11 @@ impl Text {
     Ok((input, text))
   }
 
-  fn text(&self, lemma: &mut Lemma, section: &SectionSpecies) {
+  fn text(&self, lemma: &mut Lemma, section: &SectionSpecies, wiki: &Wiki) {
     match self {
       Self::Text(texts) => {
         for text in texts {
-          text.text("", lemma, "", section);
+          text.text("", lemma, "", section, wiki);
         }
       },
       Self::List(level, texts) => {
@@ -758,7 +781,7 @@ impl Text {
         for _ in 0..*level { prefix += "*"; }
         prefix.push(' ');
         for text in texts {
-          text.text(&prefix, lemma, "\n", section);
+          text.text(&prefix, lemma, "\n", section, wiki);
         }
       },
     }
@@ -773,21 +796,20 @@ struct Template {
 
 fn main() {
   let arg = std::env::args().nth(1).unwrap();
-  scan(&arg);
+  let languages = vec![
+    "Latin".to_owned(),
+    "French".to_owned(),
+    "Italian".to_owned(),
+    "English".to_owned(),
+    "German".to_owned(),
+  ];
+  scan(&arg, &languages);
 }
 
-fn scan(page: &str) {
-  std::env::set_var("ENV_MAINWORD", page);
-  let data = mediawiki::get(page);
-  let data = Wiki::parse(&data, page).unwrap().1;
-  //println!("{:#?}", data);
-
-  let language = &data.languages["Latin"];
-  println!("{:#?}",
-           (
-             ("language", language),
-           )
-          );
+fn scan(page: &str, languages: &[String]) {
+  let wiki = Wiki::new(page, languages);
+  let bases = Bases::new();
+  while wiki.parse(&bases).unwrap() {}
 }
 
 #[derive(Clone, Debug, Default)]

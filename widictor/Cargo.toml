@@ -18,3 +18,4 @@ reqwest = { version = "0.10", features = ["blocking"] }
 
 template = { path = "../template" }
 mediawiki = { path = "../mediawiki" }
+database = { path = "../database" }
