@@ -1,6 +1,7 @@
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
-use std::sync::{Arc, Weak, RwLock};
+use std::sync::{Arc, RwLock};
+use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -59,126 +60,123 @@ impl Word {
   }
 }
 
-#[derive(Clone)]
 pub struct Base {
+  language: String,
   connection: Arc<RwLock<Connection>>,
+  bases: Arc<RwLock<BasesInner>>,
+}
+
+impl Clone for Base {
+  fn clone(&self) -> Self {
+  }
 }
 
 impl Base {
-  pub fn create(path: &std::path::Path) -> Result<Self, Error> {
-    {
-      std::fs::File::create(path)?;
-    }
-    let me = Self::open(path)?;
-    {
-      let connection = me.connection.write().unwrap();
-      connection.execute(
-        "CREATE TABLE words (
-          id INTEGER PRIMARY KEY,
-          word TEXT NOT NULL,
-          value TEXT NOT NULL
-        )",
-        params![]
-      )?;
-      connection.execute(
-        "CREATE TABLE tags (
-          id INTEGER PRIMARY KEY,
-          tag TEXT NOT NULL UNIQUE
-        )",
-        params![]
-      )?;
-      connection.execute(
-        "CREATE TABLE word_tags (
-          word INTEGER,
-          tag INTEGER,
-          PRIMARY KEY (word, tag),
-          FOREIGN KEY (word)
-            REFERENCES words (id)
-              ON DELETE CASCADE
-              ON UPDATE NO ACTION,
-          FOREIGN KEY (tag)
-            REFERENCES tags (id)
-              ON DELETE CASCADE
-              ON UPDATE NO ACTION
-        )",
-        params![]
-      )?;
-      // mutation
-      connection.execute(
-        "CREATE TABLE forms (
-          id INTEGER PRIMARY KEY,
-          form TEXT NOT NULL UNIQUE
-        )",
-        params![]
-      )?;
-      connection.execute(
-        "CREATE TABLE word_forms (
-          word INTEGER,
-          form INTEGER,
-          value TEXT NOT NULL,
-          PRIMARY KEY (word, form),
-          FOREIGN KEY (word)
-            REFERENCES words (id)
-              ON DELETE CASCADE
-              ON UPDATE NO ACTION,
-          FOREIGN KEY (form)
-            REFERENCES forms (id)
-              ON DELETE CASCADE
-              ON UPDATE NO ACTION
-        )",
-        params![]
-      )?;
-      // properties
-      connection.execute(
-        "CREATE TABLE properties (
-          id INTEGER PRIMARY KEY,
-          property TEXT NOT NULL UNIQUE
-        )",
-        params![]
-      )?;
-      connection.execute(
-        "CREATE TABLE word_properties (
-          word INTEGER,
-          property INTEGER,
-          value TEXT NOT NULL,
-          PRIMARY KEY (word, property),
-          FOREIGN KEY (word)
-            REFERENCES words (id)
-              ON DELETE CASCADE
-              ON UPDATE NO ACTION,
-          FOREIGN KEY (property)
-            REFERENCES properties (id)
-              ON DELETE CASCADE
-              ON UPDATE NO ACTION
-        )",
-        params![]
-      )?;
-      // links
-      connection.execute(
-        "CREATE TABLE word_links (
-          word INTEGER,
-          etymology INTEGER,
-          PRIMARY KEY (word, etymology),
-          FOREIGN KEY (word)
-            REFERENCES words (id)
-              ON DELETE CASCADE
-              ON UPDATE NO ACTION,
-          FOREIGN KEY (etymology)
-            REFERENCES words (id)
-              ON DELETE CASCADE
-              ON UPDATE NO ACTION
-        )",
-        params![]
-      )?;
-    }
-    Ok(me)
+  pub fn new() -> Self {
+    unimplemented!()
   }
+  pub fn create(&mut self) -> Result<(), Error> {
+    let connection = self.connection.write().unwrap();
+    connection.execute(
+      "CREATE TABLE words (
+        id INTEGER PRIMARY KEY,
+        word TEXT NOT NULL,
+        value TEXT NOT NULL
+      )",
+      params![]
+    )?;
+    connection.execute(
+      "CREATE TABLE tags (
+        id INTEGER PRIMARY KEY,
+        tag TEXT NOT NULL UNIQUE
+      )",
+      params![]
+    )?;
+    connection.execute(
+      "CREATE TABLE word_tags (
+        word INTEGER,
+        tag INTEGER,
+        PRIMARY KEY (word, tag),
+        FOREIGN KEY (word)
+          REFERENCES words (id)
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION,
+        FOREIGN KEY (tag)
+          REFERENCES tags (id)
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION
+      )",
+      params![]
+    )?;
+    // mutation
+    connection.execute(
+      "CREATE TABLE forms (
+        id INTEGER PRIMARY KEY,
+        form TEXT NOT NULL UNIQUE
+      )",
+      params![]
+    )?;
+    connection.execute(
+      "CREATE TABLE word_forms (
+        word INTEGER,
+        form INTEGER,
+        value TEXT NOT NULL,
+        PRIMARY KEY (word, form),
+        FOREIGN KEY (word)
+          REFERENCES words (id)
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION,
+        FOREIGN KEY (form)
+          REFERENCES forms (id)
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION
+      )",
+      params![]
+    )?;
+    // properties
+    connection.execute(
+      "CREATE TABLE properties (
+        id INTEGER PRIMARY KEY,
+        property TEXT NOT NULL UNIQUE
+      )",
+      params![]
+    )?;
+    connection.execute(
+      "CREATE TABLE word_properties (
+        word INTEGER,
+        property INTEGER,
+        value TEXT NOT NULL,
+        PRIMARY KEY (word, property),
+        FOREIGN KEY (word)
+          REFERENCES words (id)
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION,
+        FOREIGN KEY (property)
+          REFERENCES properties (id)
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION
+      )",
+      params![]
+    )?;
+    // links
+    connection.execute(
+      "CREATE TABLE word_links (
+        word INTEGER,
+        etymology INTEGER,
+        PRIMARY KEY (word, etymology),
+        FOREIGN KEY (word)
+          REFERENCES words (id)
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION,
+        FOREIGN KEY (etymology)
+          REFERENCES words (id)
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION
+      )",
+      params![]
+    )?;
 
-  pub fn open(path: &std::path::Path) -> Result<Self, Error> {
-    let connection = Arc::new(RwLock::new(Connection::open(path)?));
-    Ok(Self {
-      connection
-    })
+    Ok(())
   }
 
   pub fn insert_word(&mut self, word: &str, value: &str) -> Result<Word, Error> {
@@ -470,6 +468,60 @@ impl Base {
   }
 }
 
+impl Drop for Base {
+  fn drop(&mut self) {
+    let counter = self.bases.write().unwrap().languages.get_mut(&self.language).unwrap().0;
+    if counter == 0 {
+      self.bases.write().unwrap().languages.remove(&self.language);
+    }
+  }
+}
+
+struct BasesInner {
+  languages: HashMap<String, (u32, Arc<RwLock<Connection>>)>,
+  languages_path: PathBuf,
+}
+
+#[derive(Clone)]
+pub struct Bases(Arc<RwLock<BasesInner>>);
+
+impl Bases {
+  pub fn new() -> Self {
+    let languages_path = directories::ProjectDirs::from("com", "apqm", "widictor").unwrap().data_dir().to_owned();
+    Self(Arc::new(RwLock::new(BasesInner {
+      languages: HashMap::new(),
+      languages_path,
+    })))
+  }
+
+  pub fn load_language(&self, lang_id: &str) -> Base {
+    let mut me = self.0.write().unwrap();
+    if let Some(lang) = me.languages.get(lang_id) {
+    }
+  }
+
+  fn open(&self, language: &str) -> Result<Base, Error> {
+    let mut me = self.0.write().unwrap();
+    let path = me.languages_path.join(language);
+    let need_creation = !path.exists();
+    if need_creation {
+      std::fs::File::create(&path)?;
+    }
+    let connection = Arc::new(RwLock::new(Connection::open(path)?));
+    me.languages.insert(language.to_owned(), (1, connection.clone()));
+    let mut base = Base {
+      connection,
+      bases: self.0.clone(),
+      language: language.to_owned(),
+    };
+    if need_creation {
+      base.create()?;
+    }
+    Ok(base)
+  }
+
+}
+
 #[cfg(test)]
 mod test {
   use super::*;
@@ -507,21 +559,5 @@ mod test {
     let words: Vec<_> = words.into_iter().map(|w| w.value().unwrap()).collect();
     assert_eq!(words, vec!["translate".to_string()]);
     assert_eq!(word.property("etymology").unwrap(), properties["etymology"]);
-  }
-}
-
-pub struct Bases {
-  languages: Arc<RwLock<HashMap<String, Weak<Connection>>>>,
-}
-
-impl Bases {
-  pub fn new() -> Self {
-    Self {
-      languages: Arc::new(RwLock::new(HashMap::new())),
-    }
-  }
-
-  pub fn load_language(&self, lang_id: &str) -> Base {
-    unimplemented!()
   }
 }
