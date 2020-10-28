@@ -116,7 +116,7 @@ impl Combinator {
     self.texts.push(text);
   }
 
-  fn build(&self, wiki: &Wiki) -> (HashMap<String, Vec<Lemma>>, HashSet<String>) {
+  fn build<'a>(&self, wiki: &'a Wiki) -> (HashMap<&'a String, Vec<Lemma>>, HashSet<String>) {
     if self.last_language != None { panic!("unfinished"); }
 
     let mut out_words = HashMap::new();
@@ -227,7 +227,7 @@ impl Combinator {
           }
         }
       }
-      out_words.insert(language.to_owned(), words);
+      out_words.insert(language, words);
     }
     (out_words, out_subwords)
   }
@@ -256,17 +256,16 @@ impl<'lang> Wiki<'lang> {
   }
 
   fn parse(&mut self, bases: &Bases) -> Result<bool, String> {
-    let key = self.words.keys().next();
-    self.word = if let Some(word) = self.words.pop() {
-      word
+    self.word = if let Some(word) = self.words.iter().next() {
+      word.clone()
     } else {
       return Ok(false);
     };
+    self.words.remove(&self.word);
     let data = mediawiki::get(&self.word);
     let mut input = data.as_str();
 
     let mut elements: Vec<Element> = Vec::new();
-    let mut subs = HashSet::new();
 
     let mut wrap = |source: &str| {
       if source.is_empty() { return; }
@@ -302,39 +301,41 @@ impl<'lang> Wiki<'lang> {
 
     let (words, subwords) = combinator.build(&self);
     for word in subwords {
-      subs.insert(word);
+      self.words.insert(word);
     }
     for word in words {
-    }
-    print!("subs:");
-    for i in subs {
-      print!(" {}", i);
-    }
-    println!("");
-    for (lang, words) in words {
-      println!("LANG: {}", lang);
-      for word in words {
-        println!("WORD");
-        print!("tags:");
-        for tag in word.tags {
-          print!(" {}", tag);
-        }
-        println!("");
-        println!("value:\n{}", word.value.unwrap());
-        println!("properties:");
-        for property in word.properties {
-          println!("  {} — {}", property.0, property.1);
-        }
+      if let Ok(mut base) = bases.load_language(word.0).map_err(|e| log::error!("{}", e)) {
+        word.1.into_iter().map(|lemma| -> Result<_, _> {
+          let mut errors = Vec::new();
+          let mut word = base.insert_word(&self.word, lemma.value.as_ref().unwrap()).map_err(|e| vec![e])?;
+          for tag in lemma.tags {
+            if let Err(e) = word.insert_tag(&tag) { errors.push(e); }
+          }
+          for property in lemma.properties {
+            if let Err(e) = word.insert_property(&property.0, &property.1) { errors.push(e); }
+          }
+          for term in lemma.produced {
+            if let Err(e) = word.insert_produced(&term) { errors.push(e); }
+          }
+          for term in lemma.derived {
+            if let Err(e) = word.insert_derived(&term) { errors.push(e); }
+          }
+          if let Some(mutation) = lemma.mutation {
+            for form in mutation {
+              if let Err(e) = word.insert_form(&form.0, &form.1) { errors.push(e); }
+            }
+          }
+          Ok(())
+        }).for_each(|e: Result<_, Vec<database::Error>>| {
+          if let Err(e) = e {
+            for e in e {
+              log::error!("{}", e);
+            }
+          }
+        });
       }
     }
-    panic!()
-
-    /*
-    Ok((input, Self {
-      word: name.to_owned(),
-      languages,
-      content: article_texts,
-    })) */
+    Ok(!self.words.is_empty())
   }
 }
 
