@@ -842,4 +842,4 @@ impl Word {
 
 // {} — hide from translation
 // [] — hide in tests
-// _x_ — this word
+// _x_ — this word

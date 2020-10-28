@@ -68,14 +68,17 @@ pub struct Base {
 
 impl Clone for Base {
   fn clone(&self) -> Self {
+    { self.bases.write().unwrap().languages.get_mut(&self.language).unwrap().0 += 1; }
+    Self {
+      language: self.language.clone(),
+      connection: self.connection.clone(),
+      bases: self.bases.clone(),
+    }
   }
 }
 
 impl Base {
-  pub fn new() -> Self {
-    unimplemented!()
-  }
-  pub fn create(&mut self) -> Result<(), Error> {
+  fn create(&mut self) -> Result<(), Error> {
     let connection = self.connection.write().unwrap();
     connection.execute(
       "CREATE TABLE words (
@@ -470,7 +473,7 @@ impl Base {
 
 impl Drop for Base {
   fn drop(&mut self) {
-    let counter = self.bases.write().unwrap().languages.get_mut(&self.language).unwrap().0;
+    let counter = { self.bases.write().unwrap().languages.get_mut(&self.language).unwrap().0 };
     if counter == 0 {
       self.bases.write().unwrap().languages.remove(&self.language);
     }
@@ -494,10 +497,19 @@ impl Bases {
     })))
   }
 
-  pub fn load_language(&self, lang_id: &str) -> Base {
-    let mut me = self.0.write().unwrap();
-    if let Some(lang) = me.languages.get(lang_id) {
+  pub fn load_language(&self, lang_id: &str) -> Result<Base, Error> {
+    {
+      let mut me = self.0.write().unwrap();
+      if let Some(lang) = me.languages.get_mut(lang_id) {
+        lang.0 += 1;
+        return Ok(Base {
+          language: lang_id.to_owned(),
+          connection: lang.1.clone(),
+          bases: self.0.clone(),
+        });
+      };
     }
+    self.open(lang_id)
   }
 
   fn open(&self, language: &str) -> Result<Base, Error> {
@@ -505,6 +517,11 @@ impl Bases {
     let path = me.languages_path.join(language);
     let need_creation = !path.exists();
     if need_creation {
+      if let Some(parent) = path.parent() {
+        if !parent.exists() {
+          std::fs::create_dir_all(&parent)?;
+        }
+      }
       std::fs::File::create(&path)?;
     }
     let connection = Arc::new(RwLock::new(Connection::open(path)?));
@@ -528,7 +545,13 @@ mod test {
 
   #[test]
   fn table() {
-    let mut base = Base::create(&std::path::Path::new("/tmp/lang.db")).unwrap();
+    let bases = Bases::new();
+    let path: PathBuf = "/tmp/widictor".into();
+    if path.exists() {
+      std::fs::remove_dir_all(&path).unwrap();
+    }
+    { bases.0.write().unwrap().languages_path = path; }
+    let mut base = bases.load_language("test").unwrap();
     base.insert_word("word", "value").unwrap();
     let mut word = base.insert_word("wörd", "translate").unwrap();
     let tags = vec!["noun".to_owned(), "neuter".to_owned()];
@@ -548,6 +571,7 @@ mod test {
       word.insert_property(property.0.as_str(), property.1.as_str()).unwrap();
     }
 
+    let base = bases.load_language("test").unwrap();
     assert_eq!(word.value().unwrap().as_str(), "translate");
     assert_eq!(word.tags().unwrap(), tags);
     assert_eq!(word.forms().unwrap(), forms);
