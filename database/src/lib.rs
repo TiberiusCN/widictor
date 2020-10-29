@@ -536,7 +536,6 @@ impl Bases {
     }
     Ok(base)
   }
-
 }
 
 #[cfg(test)]

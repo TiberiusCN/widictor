@@ -104,10 +104,13 @@ impl Combinator {
   }
 
   fn push_section(&mut self, section: WordSection) {
-    let level = section.level;
+    let mut level = section.level;
     self.compact_sections(level);
     if self.sections.len() <= level {
       self.sections.push(Vec::new());
+    }
+    if self.sections.len() <= level {
+      level = self.sections.len() - 1;
     }
     self.sections[level].push(section);
   }
@@ -116,7 +119,7 @@ impl Combinator {
     self.texts.push(text);
   }
 
-  fn build<'a>(&self, wiki: &'a Wiki) -> (HashMap<&'a String, Vec<Lemma>>, HashSet<String>) {
+  fn build<'a>(&self, wiki: &'a Wiki) -> (HashMap<String, Vec<Lemma>>, HashSet<String>) {
     if self.last_language != None { panic!("unfinished"); }
 
     let mut out_words = HashMap::new();
@@ -227,7 +230,7 @@ impl Combinator {
           }
         }
       }
-      out_words.insert(language, words);
+      out_words.insert(language.clone(), words);
     }
     (out_words, out_subwords)
   }
@@ -261,11 +264,15 @@ impl<'lang> Wiki<'lang> {
     } else {
       return Ok(false);
     };
+    
+    println!("\x1b[31m{}\x1b[0m", &self.word);
     self.words.remove(&self.word);
     let data = mediawiki::get(&self.word);
     let mut input = data.as_str();
 
     let mut elements: Vec<Element> = Vec::new();
+
+    let mut subs = HashSet::new();
 
     let mut wrap = |source: &str| {
       if source.is_empty() { return; }
@@ -299,12 +306,16 @@ impl<'lang> Wiki<'lang> {
 
     let combinator = combinator.finish();
 
-    let (words, subwords) = combinator.build(&self);
+    let (words, subwords) = { combinator.build(&self) };
     for word in subwords {
       self.words.insert(word);
     }
+    for sub in subs {
+      self.words.insert(sub);
+    }
+
     for word in words {
-      if let Ok(mut base) = bases.load_language(word.0).map_err(|e| log::error!("{}", e)) {
+      if let Ok(mut base) = bases.load_language(&word.0).map_err(|e| log::error!("{}", e)) {
         word.1.into_iter().map(|lemma| -> Result<_, _> {
           let mut errors = Vec::new();
           let mut word = base.insert_word(&self.word, lemma.value.as_ref().unwrap()).map_err(|e| vec![e])?;
@@ -808,7 +819,7 @@ fn main() {
 }
 
 fn scan(page: &str, languages: &[String]) {
-  let wiki = Wiki::new(page, languages);
+  let mut wiki = Wiki::new(page, languages);
   let bases = Bases::new();
   while wiki.parse(&bases).unwrap() {}
 }
