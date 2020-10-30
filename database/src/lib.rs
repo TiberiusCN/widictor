@@ -60,6 +60,59 @@ impl Word {
   }
 }
 
+pub struct TotalBase {
+  connection: Connection,
+}
+
+impl TotalBase {
+  fn create(&mut self) -> Result<(), Error> {
+    self.connection.execute(
+      "CREATE TABLE words (
+        id INTEGER PRIMARY KEY,
+        word TEXT NOT NULL UNIQUE,
+        generation INTEGER
+      )",
+      params![]
+    )?;
+
+    Ok(())
+  }
+
+  pub fn insert_word(&mut self, word: &str, generation: u32) -> Result<(), Error> {
+    self.connection.execute(
+      "INSERT INTO words (word, generation) VALUES (?1, ?2)",
+      params![
+        word,
+        generation,
+      ]
+    )?;
+    Ok(())
+  }
+
+  pub fn update_word(&mut self, word: &str, generation: u32) -> Result<(), Error> {
+    self.connection.execute(
+      "UPDATE INTO words generation WHERE word VALUES (?1, ?2)",
+      params![
+        word,
+        generation,
+      ]
+    )?;
+    Ok(())
+  }
+
+  pub fn search_word(&self, word: &str) -> Result<Option<u32>, Error> {
+    let mut stmt = self.connection.prepare("SELECT generation FROM words WHERE word = ?1")?;
+    let mut iter = stmt.query_map(params![word], |row| -> Result<i64, rusqlite::Error> {
+      row.get(0)
+    })?;
+    if let Some(v) = iter.next() {
+      Ok(Some(v? as u32))
+    } else {
+      Ok(None)
+    }
+  }
+}
+
 pub struct Base {
   language: String,
   connection: Arc<RwLock<Connection>>,
@@ -483,18 +536,42 @@ impl Drop for Base {
 struct BasesInner {
   languages: HashMap<String, (u32, Arc<RwLock<Connection>>)>,
   languages_path: PathBuf,
+  total: TotalBase,
 }
 
 #[derive(Clone)]
 pub struct Bases(Arc<RwLock<BasesInner>>);
 
 impl Bases {
-  pub fn new() -> Self {
+  pub fn new() -> Result<Self, Error> {
     let languages_path = directories::ProjectDirs::from("com", "apqm", "widictor").unwrap().data_dir().to_owned();
-    Self(Arc::new(RwLock::new(BasesInner {
+    let connection = languages_path.join("_total.db");
+    let need_create = !connection.exists();
+    if need_create {
+      if let Some(parent) = connection.parent() {
+        if !parent.exists() {
+          std::fs::create_dir_all(&parent)?;
+        }
+      }
+      std::fs::File::create(&connection)?;
+    }
+    let mut total = TotalBase { connection: Connection::open(connection)? };
+    if need_create {
+      total.create()?;
+    }
+    Ok(Self(Arc::new(RwLock::new(BasesInner {
       languages: HashMap::new(),
       languages_path,
-    })))
+      total,
+    }))))
+  }
+
+  pub fn total<T>(&self, lambda: T) -> Result<(), Error>
+  where
+    T: FnOnce(&mut TotalBase) -> Result<(), Error>,
+  {
+    let mut me = self.0.write().unwrap();
+    lambda(&mut me.total)
   }
 
   pub fn load_language(&self, lang_id: &str) -> Result<Base, Error> {
@@ -515,13 +592,8 @@ impl Bases {
   fn open(&self, language: &str) -> Result<Base, Error> {
     let mut me = self.0.write().unwrap();
     let path = me.languages_path.join(language);
-    let need_creation = !path.exists();
-    if need_creation {
-      if let Some(parent) = path.parent() {
-        if !parent.exists() {
-          std::fs::create_dir_all(&parent)?;
-        }
-      }
+    let need_create = !path.exists();
+    if need_create {
       std::fs::File::create(&path)?;
     }
     let connection = Arc::new(RwLock::new(Connection::open(path)?));
@@ -531,7 +603,7 @@ impl Bases {
       bases: self.0.clone(),
       language: language.to_owned(),
     };
-    if need_creation {
+    if need_create {
       base.create()?;
     }
     Ok(base)
@@ -544,7 +616,7 @@ mod test {
 
   #[test]
   fn table() {
-    let bases = Bases::new();
+    let bases = Bases::new().unwrap();
     let path: PathBuf = "/tmp/widictor".into();
     if path.exists() {
       std::fs::remove_dir_all(&path).unwrap();
@@ -582,5 +654,35 @@ mod test {
     let words: Vec<_> = words.into_iter().map(|w| w.value().unwrap()).collect();
     assert_eq!(words, vec!["translate".to_string()]);
     assert_eq!(word.property("etymology").unwrap(), properties["etymology"]);
+  }
+
+  #[test]
+  fn total() {
+    let bases = Bases::new().unwrap();
+    let path: PathBuf = "/tmp/widictor".into();
+    if path.exists() {
+      std::fs::remove_dir_all(&path).unwrap();
+    }
+    { bases.0.write().unwrap().languages_path = path; }
+    bases.total(|base| {
+      let gen = base.search_word("generation")?;
+      assert_eq!(gen, None);
+      base.insert_word("generation", 2)?;
+      Ok(())
+    }).unwrap();
+    bases.total(|base| {
+      let gen = base.search_word("generation")?;
+      assert_eq!(gen, Some(2));
+      assert!(base.insert_word("generation", 4).is_err());
+      let gen = base.search_word("generation")?;
+      assert_eq!(gen, Some(2));
+      base.update_word("generation", 4)?;
+      Ok(())
+    }).unwrap();
+    bases.total(|base| {
+      let gen = base.search_word("generation")?;
+      assert_eq!(gen, Some(4));
+      Ok(())
+    }).unwrap();
   }
 }
