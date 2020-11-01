@@ -7,4 +7,5 @@ members = [
   "database",
   "template",
   "mediawiki",
+  "remote",
 ]

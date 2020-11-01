@@ -91,10 +91,10 @@ impl TotalBase {
 
   pub fn update_word(&mut self, word: &str, generation: u32) -> Result<(), Error> {
     self.connection.execute(
-      "UPDATE INTO words generation WHERE word VALUES (?1, ?2)",
+      "UPDATE words SET generation = ? WHERE word = ?",
       params![
-        word,
         generation,
+        word,
       ]
     )?;
     Ok(())
@@ -566,9 +566,9 @@ impl Bases {
     }))))
   }
 
-  pub fn total<T>(&self, lambda: T) -> Result<(), Error>
+  pub fn total<T, R>(&self, lambda: T) -> Result<R, Error>
   where
-    T: FnOnce(&mut TotalBase) -> Result<(), Error>,
+    T: FnOnce(&mut TotalBase) -> Result<R, Error>,
   {
     let mut me = self.0.write().unwrap();
     lambda(&mut me.total)
@@ -616,12 +616,8 @@ mod test {
 
   #[test]
   fn table() {
+    set_path();
     let bases = Bases::new().unwrap();
-    let path: PathBuf = "/tmp/widictor".into();
-    if path.exists() {
-      std::fs::remove_dir_all(&path).unwrap();
-    }
-    { bases.0.write().unwrap().languages_path = path; }
     let mut base = bases.load_language("test").unwrap();
     base.insert_word("word", "value").unwrap();
     let mut word = base.insert_word("wörd", "translate").unwrap();
@@ -658,12 +654,8 @@ mod test {
 
   #[test]
   fn total() {
+    set_path();
     let bases = Bases::new().unwrap();
-    let path: PathBuf = "/tmp/widictor".into();
-    if path.exists() {
-      std::fs::remove_dir_all(&path).unwrap();
-    }
-    { bases.0.write().unwrap().languages_path = path; }
     bases.total(|base| {
       let gen = base.search_word("generation")?;
       assert_eq!(gen, None);
@@ -684,5 +676,13 @@ mod test {
       assert_eq!(gen, Some(4));
       Ok(())
     }).unwrap();
+  }
+
+  fn set_path() {
+    std::env::set_var("XDG_DATA_HOME", "/tmp/widictor");
+    let path: PathBuf = "/tmp/widictor".into();
+    if path.exists() {
+      std::fs::remove_dir_all(&path).unwrap();
+    }
   }
 }

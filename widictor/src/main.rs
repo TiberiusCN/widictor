@@ -258,93 +258,109 @@ impl<'lang> Wiki<'lang> {
     }
   }
 
-  fn parse(&mut self, bases: &Bases) -> Result<bool, String> {
+  fn parse(&mut self, bases: &Bases, generation: u32) -> Result<bool, String> {
     self.word = if let Some(word) = self.words.iter().next() {
       word.clone()
     } else {
       return Ok(false);
     };
-    
-    println!("\x1b[31m{}\x1b[0m", &self.word);
     self.words.remove(&self.word);
-    let data = mediawiki::get(&self.word);
-    let mut input = data.as_str();
 
-    let mut elements: Vec<Element> = Vec::new();
+    let gen = bases.total(|base| {
+      base.search_word(&self.word)
+    }).unwrap().unwrap_or_default();
+    if gen < generation {
+      println!("\x1b[32m{}\x1b[0m", &self.word);
 
-    let mut subs = HashSet::new();
+      let data = mediawiki::get(&self.word);
+      let mut input = data.as_str();
 
-    let mut wrap = |source: &str| {
-      if source.is_empty() { return; }
+      let mut elements: Vec<Element> = Vec::new();
 
-      let element =
-        Language::parse(source).map(|s| Element::Language(s.1))
-        .or_else(|_| WordSection::parse(source).map(|s| Element::WordSection(s.1)))
-        .or_else(|_| Self::section_ending(source).map(|_| Element::LanguageSeparator))
-        .or_else(|_| Text::parse(source, &mut subs).map(|s| Element::Text(s.1)))
-        .unwrap();
+      let mut subs = HashSet::new();
 
-      elements.push(element);
-    };
-    
-    while let Ok(line) = Self::line(input) {
-      input = Self::line_ending(line.0).unwrap().0;
-      wrap(line.1);
-    }
-    wrap(input);
+      let mut wrap = |source: &str| {
+        if source.is_empty() { return; }
 
-    let mut combinator = Combinator::default();
+        let element =
+          Language::parse(source).map(|s| Element::Language(s.1))
+          .or_else(|_| WordSection::parse(source).map(|s| Element::WordSection(s.1)))
+          .or_else(|_| Self::section_ending(source).map(|_| Element::LanguageSeparator))
+          .or_else(|_| Text::parse(source, &mut subs).map(|s| Element::Text(s.1)))
+          .unwrap();
 
-    for section in elements {
-      match section {
-        Element::Language(language) => combinator.push_language(language),
-        Element::WordSection(section) => combinator.push_section(section),
-        Element::Text(text) => combinator.push_text(text),
-        Element::LanguageSeparator => {},
+        elements.push(element);
+      };
+
+      while let Ok(line) = Self::line(input) {
+        input = Self::line_ending(line.0).unwrap().0;
+        wrap(line.1);
       }
-    }
+      wrap(input);
 
-    let combinator = combinator.finish();
+      let mut combinator = Combinator::default();
 
-    let (words, subwords) = { combinator.build(&self) };
-    for word in subwords {
-      self.words.insert(word);
-    }
-    for sub in subs {
-      self.words.insert(sub);
-    }
-
-    for word in words {
-      if let Ok(mut base) = bases.load_language(&word.0).map_err(|e| log::error!("{}", e)) {
-        word.1.into_iter().map(|lemma| -> Result<_, _> {
-          let mut errors = Vec::new();
-          let mut word = base.insert_word(&self.word, lemma.value.as_ref().unwrap()).map_err(|e| vec![e])?;
-          for tag in lemma.tags {
-            if let Err(e) = word.insert_tag(&tag) { errors.push(e); }
-          }
-          for property in lemma.properties {
-            if let Err(e) = word.insert_property(&property.0, &property.1) { errors.push(e); }
-          }
-          for term in lemma.produced {
-            if let Err(e) = word.insert_produced(&term) { errors.push(e); }
-          }
-          for term in lemma.derived {
-            if let Err(e) = word.insert_derived(&term) { errors.push(e); }
-          }
-          if let Some(mutation) = lemma.mutation {
-            for form in mutation {
-              if let Err(e) = word.insert_form(&form.0, &form.1) { errors.push(e); }
-            }
-          }
-          Ok(())
-        }).for_each(|e: Result<_, Vec<database::Error>>| {
-          if let Err(e) = e {
-            for e in e {
-              log::error!("{}", e);
-            }
-          }
-        });
+      for section in elements {
+        match section {
+          Element::Language(language) => combinator.push_language(language),
+          Element::WordSection(section) => combinator.push_section(section),
+          Element::Text(text) => combinator.push_text(text),
+          Element::LanguageSeparator => {},
+        }
       }
+
+      let combinator = combinator.finish();
+
+      let (words, subwords) = { combinator.build(&self) };
+      for word in subwords {
+        self.words.insert(word);
+      }
+      for sub in subs {
+        self.words.insert(sub);
+      }
+
+      for word in words {
+        if let Ok(mut base) = bases.load_language(&word.0).map_err(|e| log::error!("{}", e)) {
+          word.1.into_iter().map(|lemma| -> Result<_, _> {
+            let mut errors = Vec::new();
+            let mut word = base.insert_word(&self.word, lemma.value.as_ref().unwrap()).map_err(|e| vec![e])?;
+            for tag in lemma.tags {
+              if let Err(e) = word.insert_tag(&tag) { errors.push(e); }
+            }
+            for property in lemma.properties {
+              if let Err(e) = word.insert_property(&property.0, &property.1) { errors.push(e); }
+            }
+            for term in lemma.produced {
+              if let Err(e) = word.insert_produced(&term) { errors.push(e); }
+            }
+            for term in lemma.derived {
+              if let Err(e) = word.insert_derived(&term) { errors.push(e); }
+            }
+            if let Some(mutation) = lemma.mutation {
+              for form in mutation {
+                if let Err(e) = word.insert_form(&form.0, &form.1) { errors.push(e); }
+              }
+            }
+            Ok(())
+          }).for_each(|e: Result<_, Vec<database::Error>>| {
+            if let Err(e) = e {
+              for e in e {
+                log::error!("{}", e);
+              }
+            }
+          });
+        }
+      }
+
+      bases.total(|base| {
+        if gen == 0 {
+          base.insert_word(&self.word, generation)
+        } else {
+          base.update_word(&self.word, generation)
+        }
+      }).unwrap();
+    } else {
+      println!("\x1b[31m{}\x1b[0m", &self.word);
     }
     Ok(!self.words.is_empty())
   }
@@ -820,8 +836,8 @@ fn main() {
 
 fn scan(page: &str, languages: &[String]) {
   let mut wiki = Wiki::new(page, languages);
-  let bases = Bases::new();
-  while wiki.parse(&bases).unwrap() {}
+  let bases = Bases::new().unwrap();
+  while wiki.parse(&bases, 1).unwrap() {}
 }
 
 #[derive(Clone, Debug, Default)]
