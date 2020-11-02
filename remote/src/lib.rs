@@ -1,5 +1,15 @@
 use serde_derive::*;
 use std::collections::HashMap;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+  #[error(transparent)]
+  Reqwest(#[from] reqwest::Error),
+  #[error(transparent)]
+  Serde(#[from] serde_json::Error),
+  #[error("something missing in wikitext")]
+  LackOfData,
+}
   
 #[derive(Deserialize)]
 struct ApiAnswer {
@@ -27,10 +37,10 @@ struct ApiRevision {
   data: String,
 }
 
-pub fn get(page: &str) -> String {
-  let resp = reqwest::blocking::get(&format!("https://en.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&titles={}", page)).unwrap();
-  let resp: ApiAnswer = serde_json::from_reader(resp.bytes().unwrap().as_ref()).unwrap();
-  resp.query.pages.iter().last().unwrap().1.revisions[0].data.clone()
+pub fn get(page: &str) -> Result<String, Error> {
+  let resp = reqwest::blocking::get(&format!("https://en.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&titles={}", page))?;
+  let resp: ApiAnswer = serde_json::from_reader(resp.bytes().unwrap().as_ref())?;
+  Ok(resp.query.pages.iter().last().ok_or_else(|| Error::LackOfData)?.1.revisions[0].data.clone())
 }
 
 pub fn translate(s: &str, into: &str) -> String {

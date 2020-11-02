@@ -6,6 +6,5 @@ members = [
   "templates/derived",
   "database",
   "template",
-  "mediawiki",
   "remote",
 ]

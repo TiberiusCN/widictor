@@ -18,5 +18,5 @@ log = "0.4"
 reqwest = { version = "0.10", features = ["blocking"] }
 
 template = { path = "../template" }
-mediawiki = { path = "../mediawiki" }
+remote = { path = "../remote" }
 database = { path = "../database" }

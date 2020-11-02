@@ -157,6 +157,7 @@ impl Combinator {
                         }
                         let mut new_line = String::new();
                         let mut quote = 0u32;
+                        let mut is_begin = true;
                         for c in line.chars() {
                           if c == '\'' {
                             quote += 1;
@@ -166,18 +167,41 @@ impl Combinator {
                               1 => new_line.push('\''),
                               2 => new_line.push('"'),
                               3 => new_line.push('_'),
-                              c => panic!("overquoted: {}", c),
+                              4 => {}, // '' [ ] ''
+                              5 => if is_begin {
+                                new_line += "_\"";
+                              } else {
+                                new_line += "\"_";
+                              },
+                              6 => if is_begin {
+                                new_line += "_\"'";
+                              } else {
+                                new_line += "'\"_";
+                              },
+                              c => panic!("overquoted: {} in {} … {}", c, out, line),
                             }
                             quote = 0;
                             new_line.push(c);
                           }
+                          is_begin = c.is_whitespace();
                         }
                         match quote {
                           0 => {},
                           1 => new_line.push('\''),
                           2 => new_line.push('"'),
                           3 => new_line.push('_'),
-                          c => panic!("overquoted: {}", c),
+                          4 => {},
+                          5 => if is_begin {
+                            new_line += "_\"";
+                          } else {
+                            new_line += "\"_";
+                          },
+                          6 => if is_begin {
+                            new_line += "_\"'";
+                          } else {
+                            new_line += "'\"_";
+                          },
+                          c => panic!("overquoted: {} in {} … {}", c, out, line),
                         }
                         if !new_line.is_empty() {
                           if deep > 1 {
@@ -272,7 +296,7 @@ impl<'lang> Wiki<'lang> {
     if gen < generation {
       println!("\x1b[32m{}\x1b[0m", &self.word);
 
-      let data = mediawiki::get(&self.word);
+      let data = remote::get(&self.word).map_err(|e| format!("{}", e))?;
       let mut input = data.as_str();
 
       let mut elements: Vec<Element> = Vec::new();
@@ -399,6 +423,8 @@ impl Language {
 
 #[derive(Debug, PartialEq, std::cmp::Eq, std::hash::Hash, Clone, Copy)]
 enum Section {
+  Unknown,
+
   Declension,
   DerivedTerms,
   RelatedTerms,
@@ -447,7 +473,7 @@ impl Section {
       Self::Synonyms => 8,
       Self::Antonyms => 9,
 
-      Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Determiner | Self::Contraction => return None,
+      Self::Unknown | Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Determiner | Self::Contraction => return None,
     })
   }
   
@@ -460,13 +486,13 @@ impl Section {
       Self::Pronunciation => SectionSpecies::Pronunciation,
       Self::UsageNotes => SectionSpecies::UsageNotes,
 
-      Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Determiner | Self::Contraction => return None,
+      Self::Unknown | Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Determiner | Self::Contraction => return None,
     })
   }
 
   fn tag(&self) -> Option<&'static str> {
     match self {
-      Self::Compounds | Self::Declension | Self::DerivedTerms | Self::RelatedTerms | Self::Descendants | Self::SeeAlso | Self::Etymology | Self::Pronunciation | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Conjugation | Self::UsageNotes | Self::Translations | Self::Anagrams | Self::Synonyms | Self::Antonyms | Self::Determiner | Self::Contraction | Self::Inflection => None,
+      Self::Unknown | Self::Compounds | Self::Declension | Self::DerivedTerms | Self::RelatedTerms | Self::Descendants | Self::SeeAlso | Self::Etymology | Self::Pronunciation | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Conjugation | Self::UsageNotes | Self::Translations | Self::Anagrams | Self::Synonyms | Self::Antonyms | Self::Determiner | Self::Contraction | Self::Inflection => None,
 
       Self::Conjunction => Some("conjunction"),
       Self::Noun => Some("noun"),
@@ -540,7 +566,8 @@ impl WordSection {
       else if value.starts_with("Adverb") { Section::Adverb }
       else if value.starts_with("Numeral") { Section::Numeral }
       else if value.starts_with("Particle") { Section::Particle }
-      else { panic!("{}", value); }
+
+      else { log::warn!("unknown section: {}", value); Section::Unknown }
     };
     Ok((tail, Self {
       name: section,
@@ -837,7 +864,17 @@ fn main() {
 fn scan(page: &str, languages: &[String]) {
   let mut wiki = Wiki::new(page, languages);
   let bases = Bases::new().unwrap();
-  while wiki.parse(&bases, 1).unwrap() {}
+  loop {
+    match wiki.parse(&bases, 1) {
+      Ok(false) => {
+        break;
+      },
+      Ok(true) => {},
+      Err(e) => {
+        eprintln!("{}", e);
+      }
+    }
+  }
 }
 
 #[derive(Clone, Debug, Default)]
