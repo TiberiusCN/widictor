@@ -125,8 +125,6 @@ impl Combinator {
     let mut out_words = HashMap::new();
     let mut out_subwords = HashSet::new();
 
-    // ToDo: split phrase into words [derived]
-
     for language in wiki.languages {
       let mut words = Vec::new();
 
@@ -247,6 +245,7 @@ impl Combinator {
             }
           }
           for subword in word.derived.iter().chain(word.produced.iter()) {
+            println!("\x1b[35m{}\x1b[0m", subword);
             out_subwords.insert(subword.to_owned());
           }
           if word.value.is_some() {
@@ -282,7 +281,7 @@ impl<'lang> Wiki<'lang> {
     }
   }
 
-  fn parse(&mut self, bases: &Bases, generation: u32) -> Result<bool, String> {
+  fn parse(&mut self, bases: &Bases, generation: u32) -> Result<bool, Error> {
     self.word = if let Some(word) = self.words.iter().next() {
       word.clone()
     } else {
@@ -290,13 +289,37 @@ impl<'lang> Wiki<'lang> {
     };
     self.words.remove(&self.word);
 
+    if self.word.contains(' ') {
+      for word in self.word.split(' ') {
+        self.words.insert(word.to_owned());
+      }
+    }
+
+    if self.word.contains(':') {
+      println!("\x1b[33m{}\x1b[0m", &self.word);
+      return Ok(true);
+    }
+
     let gen = bases.total(|base| {
       base.search_word(&self.word)
     }).unwrap().unwrap_or_default();
     if gen < generation {
       println!("\x1b[32m{}\x1b[0m", &self.word);
 
-      let data = remote::get(&self.word).map_err(|e| format!("{}", e))?;
+      let data = remote::get(&self.word);
+      if let Err(remote::Error::Reqwest(..)) = &data {
+      } else {
+        bases.total(|base| {
+          if gen == 0 {
+            base.insert_word(&self.word, generation)
+          } else {
+            base.update_word(&self.word, generation)
+          }
+        })?;
+      }
+
+      let data = data?;
+
       let mut input = data.as_str();
 
       let mut elements: Vec<Element> = Vec::new();
@@ -375,14 +398,6 @@ impl<'lang> Wiki<'lang> {
           });
         }
       }
-
-      bases.total(|base| {
-        if gen == 0 {
-          base.insert_word(&self.word, generation)
-        } else {
-          base.update_word(&self.word, generation)
-        }
-      }).unwrap();
     } else {
       println!("\x1b[31m{}\x1b[0m", &self.word);
     }
@@ -905,6 +920,19 @@ impl Word {
   }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+  #[error(transparent)]
+  Remote(#[from] remote::Error),
+  #[error(transparent)]
+  Database(#[from] database::Error),
+}
+
 // {} — hide from translation
 // [] — hide in tests
 // _x_ — this word
+
+/* ToDo:
+  (has sample) → sample without _{}_ = question
+  insert form even if no value
+*/
