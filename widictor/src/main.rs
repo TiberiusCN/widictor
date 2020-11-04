@@ -23,6 +23,7 @@ lazy_static::lazy_static! {
 
 #[derive(Debug)]
 pub enum WikiError<I> {
+  BadTemplate,
   OpenNotMatchesClose,
   Nom(I, ErrorKind),
 }
@@ -682,7 +683,7 @@ impl Text {
   named!(external_link_open<&str, &str, WikiError<&str>>, tag!("["));
   named!(external_link_close<&str, &str, WikiError<&str>>, tag!("]"));
   named!(template<&str, (Vec<Option<String>>, Vec<Vec<String>>), WikiError<&str>>,
-    map!(
+    map_res!(
       delimited!(
         Self::template_open,
         |input: &str| -> IResult<&str, &str, WikiError<&str>> {
@@ -703,57 +704,84 @@ impl Text {
         },
         Self::template_close
       ),
-      |s| {
-        let mut v = Vec::new();
-        let mut subv = Vec::new();
-        let mut multi = 0;
-        let mut headers = Vec::new();
-        let mut header = None;
-        let mut text = String::new();
-        let mut linked = 0;
-        for c in s.chars() {
-          match c {
-            '=' => {
-              header = Some(text);
-              text = String::new();
-            },
-            '|' if linked == 0 => {
-              headers.push(header.take());
-              subv.push(text);
-              text = String::new();
-              v.push(subv);
-              subv = Vec::new();
-            },
-            '(' => {
-              multi += 1;
-            },
-            ')' => {
-              multi -= 1;
-            },
-            '[' => {
-              linked += 1;
-            },
-            ']' => {
-              linked -= 1;
-            },
-            ',' if multi == 2 => {
-              subv.push(text);
-              text = String::new();
-            },
-            c => {
-              text.push(c);
-            },
-          }
-        }
-        headers.push(header);
-        subv.push(text);
-        v.push(subv);
-        (headers, v)
-      }
+      Self::template_parser
     )
   );
-  named!(link<&str, &str, WikiError<&str>>, delimited!(Self::link_open, take_while1!(|c: char| c != ']'), Self::link_close));
-  named!(external_link<&str, &str, WikiError<&str>>, delimited!(Self::external_link_open, take_while1!(|c: char| c != ']'), Self::external_link_close));
+  fn template_parser<'a>(s: &'a str) -> Result<(Vec<Option<String>>, Vec<Vec<String>>), WikiError<&'a str>> {
+    let mut input = s;
+    let mut v = Vec::new();
+    let mut subv = Vec::new();
+    let mut multi = 0;
+    let mut headers = Vec::new();
+    let mut header = None;
+    let mut text = String::new();
+    while let Some(c) = input.chars().next() {
+      input = &input[c.len_utf8()..];
+      match c {
+        '=' => {
+          header = Some(text);
+          text = String::new();
+        },
+        '|' => {
+          headers.push(header.take());
+          subv.push(text);
+          text = String::new();
+          v.push(subv);
+          subv = Vec::new();
+        },
+        '(' => {
+          multi += 1;
+        },
+        ')' => {
+          multi -= 1;
+        },
+        '[' => {
+          let (tail, (link, alter)) = Self::link(input).or_else(|_| Self::external_link(input)).map_err(|_| WikiError::BadTemplate)?;
+          if let Some(alter) = alter {
+    //        subs.insert(link.to_owned());
+            text += alter;
+          } else {
+            text += link;
+          }
+          input = tail;
+        },
+        ',' if multi == 2 => {
+          subv.push(text);
+          text = String::new();
+        },
+        c => {
+          text.push(c);
+        },
+      }
+    }
+    headers.push(header);
+    subv.push(text);
+    v.push(subv);
+    Ok((headers, v))
+  }
+  fn any_link(input: &str) -> IResult<&str, (&str, Option<&str>), WikiError<&str>> {
+    let mut end = 0;
+    let mut word_end = None;
+    for c in input.chars() {
+      if c == '|' {
+        word_end = Some(end);
+      } else if c == ']' {
+        let tail = &input[end..];
+        return Ok((tail, if let Some(word_end) = word_end {
+          let word = &input[0..word_end];
+          let alter = &input[word_end+1..end];
+          (word, Some(alter))
+        } else {
+          let word = &input[0..end];
+          (word, None)
+        }));
+      }
+      end += c.len_utf8();
+    }
+    Err(nom::Err::Error(WikiError::OpenNotMatchesClose))
+  }
+  named!(link<&str, (&str, Option<&str>), WikiError<&str>>, delimited!(Self::link_open, Self::any_link, Self::link_close));
+  named!(external_link<&str, (&str, Option<&str>), WikiError<&str>>, delimited!(Self::external_link_open, Self::any_link, Self::external_link_close));
   named!(wrapped_template<&str, Piece, WikiError<&str>>, map!(Self::template, |(headers, values)| {
     let mut id = 0;
     let mut data: HashMap<String, Vec<String>> = headers.into_iter().zip(values.into_iter()).map(|(header, values)| {
@@ -786,11 +814,15 @@ impl Text {
     while !input.is_empty() {
       if let Ok((tail, mut template)) = Self::wrapped_template(input) {
         if let Piece::Template(template) = &mut template {
+          println!("args: {:?}", template.args);
           for parts in template.args.values_mut() {
+            println!("parts: {:?}", parts);
             for part in parts.iter_mut() {
+              println!("part: {:?}", part);
               let mut split = part.split('|');
               let sub = split.next().unwrap();
               if let Some(form) = split.next() {
+                println!("Z: \x1b[35m{}\x1b[0m", sub);
                 subs.insert(sub.to_string());
                 *part = form.to_string();
               }
@@ -804,17 +836,12 @@ impl Text {
         pieces.push(template);
         input = tail;
       } else {
-        if let Ok((tail, link)) = Self::link(input) {
-          let splits = link.split('|');
-          let mut splits = splits.map(|l| {
-            l.split('#').next().unwrap()
-          }).collect::<Vec<_>>().into_iter();
-          let sub = splits.next().unwrap();
-          if let Some(form) = splits.next() {
-            subs.insert(sub.to_owned());
-            data += form;
+        if let Ok((tail, (link, alter))) = Self::link(input) {
+          if let Some(alter) = alter {
+            subs.insert(link.to_owned());
+            data += alter;
           } else {
-            data += sub;
+            data += link;
           }
           input = tail;
         } else if let Ok((tail, _link)) = Self::external_link(input) {
@@ -935,4 +962,6 @@ pub enum Error {
 /* ToDo:
   (has sample) → sample without _{}_ = question
   insert form even if no value
+  get subs from template ≈ 741
+  template in template
 */
