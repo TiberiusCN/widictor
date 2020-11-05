@@ -707,7 +707,8 @@ impl Text {
       Self::template_parser
     )
   );
-  fn template_parser<'a>(s: &'a str) -> Result<(Vec<Option<String>>, Vec<Vec<String>>), WikiError<&'a str>> {
+  fn template_parser<'a>(s: &'a str) -> Result<(Vec<Option<String>>, Vec<Vec<String>>, HashSet<String>), WikiError<&'a str>> {
+    let mut subs = HashSet::new();
     let mut input = s;
     let mut v = Vec::new();
     let mut subv = Vec::new();
@@ -738,12 +739,12 @@ impl Text {
         '[' => {
           let (tail, (link, alter)) = Self::link(input).or_else(|_| Self::external_link(input)).map_err(|_| WikiError::BadTemplate)?;
           if let Some(alter) = alter {
-    //        subs.insert(link.to_owned());
+            subs.insert(link.to_owned());
             text += alter;
           } else {
             text += link;
           }
-          input = tail;
+          input = &tail[1..];
         },
         ',' if multi == 2 => {
           subv.push(text);
@@ -757,7 +758,7 @@ impl Text {
     headers.push(header);
     subv.push(text);
     v.push(subv);
-    Ok((headers, v))
+    Ok((headers, v, subs))
   }
   fn any_link(input: &str) -> IResult<&str, (&str, Option<&str>), WikiError<&str>> {
     let mut end = 0;
@@ -812,7 +813,10 @@ impl Text {
     let mut pieces = Vec::new();
 
     while !input.is_empty() {
-      if let Ok((tail, mut template)) = Self::wrapped_template(input) {
+      if let Ok((tail, (mut template, sub))) = Self::wrapped_template(input) {
+        for sub in sub {
+          subs.insert(sub);
+        }
         if let Piece::Template(template) = &mut template {
           println!("args: {:?}", template.args);
           for parts in template.args.values_mut() {
