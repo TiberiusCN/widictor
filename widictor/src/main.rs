@@ -623,7 +623,7 @@ impl WordSection {
 #[derive(Debug, Clone)]
 enum Piece {
   Raw(String),
-  Template(Params),
+  Template(PieceParams),
 }
 
 impl Piece {
@@ -682,7 +682,25 @@ impl Text {
   named!(link_close<&str, &str, WikiError<&str>>, tag!("]]"));
   named!(external_link_open<&str, &str, WikiError<&str>>, tag!("["));
   named!(external_link_close<&str, &str, WikiError<&str>>, tag!("]"));
-  named!(template<&str, (Vec<Option<String>>, Vec<Vec<String>>), WikiError<&str>>,
+  named!(wrapped_template<&str, (Piece, HashSet<String>), WikiError<&str>>, map!(Self::template, |(headers, values, subs)| {
+    let mut id = 0;
+    let mut data: HashMap<String, Vec<String>> = headers.into_iter().zip(values.into_iter()).map(|(header, values)| {
+      let header = header.map(|p| p.to_owned()).unwrap_or_else(|| {
+        let out = format!("{}", id);
+        id += 1;
+        out
+      });
+      (header, values.into_iter().map(|v| v.to_owned()).collect())
+    }).collect();
+
+    let com = data.remove("0").map(|v| v[0].clone()).unwrap_or_default();
+    (Piece::Template(Params {
+      section: SectionSpecies::Unknown,
+      com,
+      args: data,
+    }), subs)
+  }));
+  named!(template<&str, (Vec<Option<String>>, Vec<Vec<String>>, HashSet<String>), WikiError<&str>>,
     map_res!(
       delimited!(
         Self::template_open,
@@ -707,28 +725,36 @@ impl Text {
       Self::template_parser
     )
   );
-  fn template_parser<'a>(s: &'a str) -> Result<(Vec<Option<String>>, Vec<Vec<String>>, HashSet<String>), WikiError<&'a str>> {
-    let mut subs = HashSet::new();
+  fn template_parser(s: &str) -> IResult<&str, Piece, WikiError<&str>> {
     let mut input = s;
     let mut v = Vec::new();
     let mut subv = Vec::new();
     let mut multi = 0;
-    let mut headers = Vec::new();
     let mut header = None;
     let mut text = String::new();
+
+    let mut deep = 2;
+    let mut param_id = 0;
+    let mut piece = PieceParams {
+      section: SectionSpecies::Unknown,
+      com: String::new(),
+      args: HashMap::new(),
+    };
+    let mut alts = Vec::new();
+
     while let Some(c) = input.chars().next() {
       input = &input[c.len_utf8()..];
       match c {
-        '=' => {
+        '=' if deep == 2 => {
           header = Some(text);
           text = String::new();
         },
-        '|' => {
-          headers.push(header.take());
-          subv.push(text);
+        '|' if deep == 2 && multi == 0 => {
+          if let Some(header) = header {
+            piece.args.insert(header, Arg { alts });
+          }
+          alts = Vec::new();
           text = String::new();
-          v.push(subv);
-          subv = Vec::new();
         },
         '(' => {
           multi += 1;
@@ -736,18 +762,8 @@ impl Text {
         ')' => {
           multi -= 1;
         },
-        '[' => {
-          let (tail, (link, alter)) = Self::link(input).or_else(|_| Self::external_link(input)).map_err(|_| WikiError::BadTemplate)?;
-          if let Some(alter) = alter {
-            subs.insert(link.to_owned());
-            text += alter;
-          } else {
-            text += link;
-          }
-          input = &tail[1..];
-        },
         ',' if multi == 2 => {
-          subv.push(text);
+          alts.push(SubArg { subs: vec![Piece::Raw(text) });
           text = String::new();
         },
         c => {
@@ -783,24 +799,6 @@ impl Text {
   }
   named!(link<&str, (&str, Option<&str>), WikiError<&str>>, delimited!(Self::link_open, Self::any_link, Self::link_close));
   named!(external_link<&str, (&str, Option<&str>), WikiError<&str>>, delimited!(Self::external_link_open, Self::any_link, Self::external_link_close));
-  named!(wrapped_template<&str, Piece, WikiError<&str>>, map!(Self::template, |(headers, values)| {
-    let mut id = 0;
-    let mut data: HashMap<String, Vec<String>> = headers.into_iter().zip(values.into_iter()).map(|(header, values)| {
-      let header = header.map(|p| p.to_owned()).unwrap_or_else(|| {
-        let out = format!("{}", id);
-        id += 1;
-        out
-      });
-      (header, values.into_iter().map(|v| v.to_owned()).collect())
-    }).collect();
-
-    let com = data.remove("0").map(|v| v[0].clone()).unwrap_or_default();
-    Piece::Template(Params {
-      section: SectionSpecies::Unknown,
-      com,
-      args: data,
-    })
-  }));
   named!(list<&str, usize, WikiError<&str>>, map!(take_while1!(|c| c == '#' || c == '*' || c == ':'), |r| r.len())); // it works only in the beginning
 
   fn parse<'a>(mut input: &'a str, subs: &mut HashSet<String>) -> IResult<&'a str, Self, WikiError<&'a str>> {
@@ -959,13 +957,28 @@ pub enum Error {
   Database(#[from] database::Error),
 }
 
+#[derive(Debug, Clone)]
+struct PieceParams {
+  section: SectionSpecies,
+  com: String,
+  args: HashMap<String, Arg>,
+}
+
+#[derive(Debug, Clone)]
+struct Arg {
+  alts: Vec<SubArg>,
+}
+
+#[derive(Debug, Clone)]
+struct SubArg {
+  subs: Vec<Piece>,
+}
+
 // {} — hide from translation
 // [] — hide in tests
 // _x_ — this word
 
 /* ToDo:
-  (has sample) → sample without _{}_ = question
   insert form even if no value
-  get subs from template ≈ 741
   template in template
 */
