@@ -725,21 +725,13 @@ impl Text {
       Self::template_parser
     )
   );
-  fn template_parser(s: &str) -> IResult<&str, Piece, WikiError<&str>> {
+  fn template_parser(s: &str) -> IResult<&str, (Piece, HashSet<String>), WikiError<&str>> {
     let mut input = s;
-    let mut v = Vec::new();
-    let mut subv = Vec::new();
     let mut multi = 0;
     let mut header = None;
     let mut text = String::new();
 
-    let mut deep = 2;
     let mut param_id = 0;
-    let mut piece = PieceParams {
-      section: SectionSpecies::Unknown,
-      com: String::new(),
-      args: HashMap::new(),
-    };
     let mut alts = Vec::new();
 
     while let Some(c) = input.chars().next() {
@@ -757,24 +749,39 @@ impl Text {
           text = String::new();
         },
         '(' => {
+          if multi == 0 {
+            if text.is_empty()
+          }
           multi += 1;
         },
         ')' => {
           multi -= 1;
+          if multi == 0 {
+            alts.push(text);
+            text = String::new();
+          }
         },
         ',' if multi == 2 => {
-          alts.push(SubArg { subs: vec![Piece::Raw(text) });
+          alts.push(text);
           text = String::new();
+        },
+        '}' => {
+          break;
         },
         c => {
           text.push(c);
         },
       }
     }
+    let mut piece = PieceParams {
+      section: SectionSpecies::Unknown,
+      com: String::new(),
+      args: HashMap::new(),
+    };
     headers.push(header);
     subv.push(text);
     v.push(subv);
-    Ok((headers, v, subs))
+    Ok((input))
   }
   fn any_link(input: &str) -> IResult<&str, (&str, Option<&str>), WikiError<&str>> {
     let mut end = 0;
@@ -801,12 +808,23 @@ impl Text {
   named!(external_link<&str, (&str, Option<&str>), WikiError<&str>>, delimited!(Self::external_link_open, Self::any_link, Self::external_link_close));
   named!(list<&str, usize, WikiError<&str>>, map!(take_while1!(|c| c == '#' || c == '*' || c == ':'), |r| r.len())); // it works only in the beginning
 
-  fn parse<'a>(mut input: &'a str, subs: &mut HashSet<String>) -> IResult<&'a str, Self, WikiError<&'a str>> {
+  fn parse_any<'a>(mut input: &'a str, subs: &mut HashSet<String>) -> IResult<&'a str, Self, WikiError<&'a str>> {
     let list = Self::list(input).map(|(tail, deep)| {
       input = tail;
       deep
     }).ok();
 
+    let (input, pieces) = Self::parse_text(input, subs)?;
+
+    let text = if let Some(list) = list {
+      Self::List(list as _, pieces)
+    } else {
+      Self::Text(pieces)
+    };
+
+    Ok((input, text))
+  }
+  fn parse_text<'a>(mut input: &'a str, subs: &mut HashSet<String>) -> IResult<&'a str, Vec<Piece>, WikiError<&'a str>> {
     let mut data = String::new();
     let mut pieces = Vec::new();
 
@@ -815,12 +833,10 @@ impl Text {
         for sub in sub {
           subs.insert(sub);
         }
+        /*
         if let Piece::Template(template) = &mut template {
-          println!("args: {:?}", template.args);
           for parts in template.args.values_mut() {
-            println!("parts: {:?}", parts);
             for part in parts.iter_mut() {
-              println!("part: {:?}", part);
               let mut split = part.split('|');
               let sub = split.next().unwrap();
               if let Some(form) = split.next() {
@@ -831,6 +847,7 @@ impl Text {
             }
           }
         }
+        */
         if !data.is_empty() {
           pieces.push(Piece::Raw(data));
           data = String::new();
@@ -859,13 +876,7 @@ impl Text {
       pieces.push(Piece::Raw(data));
     }
 
-    let text = if let Some(list) = list {
-      Self::List(list as _, pieces)
-    } else {
-      Self::Text(pieces)
-    };
-
-    Ok((input, text))
+    Ok((input, pieces))
   }
 
   fn text(&self, lemma: &mut Lemma, section: &SectionSpecies, wiki: &Wiki) {
