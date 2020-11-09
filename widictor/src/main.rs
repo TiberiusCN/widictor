@@ -732,22 +732,27 @@ impl Text {
     let mut text = String::new();
 
     let mut param_id = 0;
-    let mut alts = Vec::new();
+    let mut deep = 0;
 
     while let Some(c) = input.chars().next() {
       input = &input[c.len_utf8()..];
       match c {
-        '=' if deep == 2 => {
+        '=' if deep == 0 => {
           header = Some(text);
           text = String::new();
         },
-        '|' if deep == 2 && multi == 0 => {
+        '|' if deep == 0 => {
           if let Some(header) = header {
             piece.args.insert(header, Arg { alts });
           }
           alts = Vec::new();
           text = String::new();
         },
+        ',' if deep == 0 => {
+          alts.push(text);
+          text = String::new();
+        },
+        /*
         '(' => {
           if multi == 0 {
             if text.is_empty()
@@ -761,12 +766,12 @@ impl Text {
             text = String::new();
           }
         },
-        ',' if multi == 2 => {
-          alts.push(text);
-          text = String::new();
-        },
-        '}' => {
+        */
+        '}' if deep == 0 => {
           break;
+        },
+        '{' => {
+           
         },
         c => {
           text.push(c);
