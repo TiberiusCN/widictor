@@ -63,5 +63,5 @@ impl Word {
 pub struct Params {
   pub section: SectionSpecies,
   pub com: String,
-  pub args: HashMap<String, Vec<String>>,
+  pub args: HashMap<String, String>,
 }

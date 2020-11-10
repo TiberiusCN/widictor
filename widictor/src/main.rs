@@ -335,7 +335,7 @@ impl<'lang> Wiki<'lang> {
           Language::parse(source).map(|s| Element::Language(s.1))
           .or_else(|_| WordSection::parse(source).map(|s| Element::WordSection(s.1)))
           .or_else(|_| Self::section_ending(source).map(|_| Element::LanguageSeparator))
-          .or_else(|_| Text::parse(source, &mut subs).map(|s| Element::Text(s.1)))
+          .or_else(|_| Text::parse_any(source, &mut subs).map(|s| Element::Text(s.1)))
           .unwrap();
 
         elements.push(element);
@@ -632,7 +632,19 @@ impl Piece {
     match self {
       Self::Raw(raw) => if !raw.is_empty() { lemma.append_value(prefix, raw, suffix); },
       Self::Template(map) => {
-        if let Some(template) = TEMPLATES.get(&map.com) {
+        if let Some(template_wrapper) = TEMPLATES.get(&map.com) {
+          let mut template = Params {
+            section: *section,
+            com: map.com,
+            args: HashMap::new(),
+          };
+
+          for (arg, line) in map.args {
+            let mut data = String::new();
+            for val in line {
+            }
+          };
+
           let mut map = map.clone();
           map.section = *section;
           let mut com = match std::process::Command::new(template)
@@ -683,29 +695,11 @@ impl Text {
   named!(link_close<&str, &str, WikiError<&str>>, tag!("]]"));
   named!(external_link_open<&str, &str, WikiError<&str>>, tag!("["));
   named!(external_link_close<&str, &str, WikiError<&str>>, tag!("]"));
-  named!(template<&str, (Vec<Option<String>>, Vec<Vec<String>>, HashSet<String>), WikiError<&str>>,
-    map_res!(
-      delimited!(
-        Self::template_open,
-        |input: &str| -> IResult<&str, &str, WikiError<&str>> {
-          let mut q = 2;
-          let mut end = 0;
-          for c in input.chars() {
-            if c == '{' { q += 1; }
-            else if c == '}' { q -= 1; }
-            end += c.len_utf8();
-            if q == 0 {
-              end -= 2;
-              let data = &input[0..end];
-              let tail = &input[end..];
-              return Ok((tail, data));
-            }
-          }
-          Err(nom::Err::Error(WikiError::OpenNotMatchesClose))
-        },
-        Self::template_close
-      ),
-      Self::template_parser
+  named!(template<&str, (Piece, HashSet<String>), WikiError<&str>>,
+    delimited!(
+      Self::template_open,
+      Self::template_parser,
+      Self::template_close
     )
   );
   fn template_parser(s: &str) -> IResult<&str, (Piece, HashSet<String>), WikiError<&str>> {
@@ -789,11 +783,11 @@ impl Text {
       Ok((arg, Self::parse_text(&value, &mut subs)?.1))
     }).collect::<Result<HashMap<_, _>, _>>()?;
 
-    let mut piece = PieceParams {
+    let mut piece = Piece::Template(PieceParams {
       section: SectionSpecies::Unknown,
       com,
       args,
-    };
+    });
 
     Ok((input, (piece, subs)))
   }
@@ -843,7 +837,7 @@ impl Text {
     let mut pieces = Vec::new();
 
     while !input.is_empty() {
-      if let Ok((tail, (mut template, sub))) = Self::wrapped_template(input) {
+      if let Ok((tail, (mut template, sub))) = Self::template(input) {
         for sub in sub {
           subs.insert(sub);
         }
@@ -862,10 +856,12 @@ impl Text {
           }
         }
         */
+        /*
         if !data.is_empty() {
           pieces.push(Piece::Raw(data));
           data = String::new();
         }
+        */
         pieces.push(template);
         input = tail;
       } else {
