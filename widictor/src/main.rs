@@ -635,19 +635,21 @@ impl Piece {
         if let Some(template_wrapper) = TEMPLATES.get(&map.com) {
           let mut template = Params {
             section: *section,
-            com: map.com,
+            com: map.com.clone(),
             args: HashMap::new(),
           };
 
-          for (arg, line) in map.args {
-            let mut data = String::new();
+          for (arg, line) in &map.args {
+            let mut lemma = Lemma::default();
             for val in line {
+              val.text("", &mut lemma, "", section, wiki);
             }
+            template.args.insert(arg.clone(), lemma.value.unwrap_or_default());
           };
 
-          let mut map = map.clone();
+          let mut map = template;
           map.section = *section;
-          let mut com = match std::process::Command::new(template)
+          let mut com = match std::process::Command::new(template_wrapper)
             .env("ENV_MAINWORD", &wiki.word)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -704,7 +706,6 @@ impl Text {
   );
   fn template_parser(s: &str) -> IResult<&str, (Piece, HashSet<String>), WikiError<&str>> {
     let mut input = s;
-    let mut multi = 0;
     let mut header = None;
     let mut text = String::new();
 
@@ -712,21 +713,21 @@ impl Text {
     let mut deep = 0;
     let mut args = HashMap::new();
 
-    let mut wrap_or_gen_header = || {
+    let mut wrap_or_gen_header = |text: &mut String, header: &mut Option<String>| {
+      let text_val = text.clone();
+      text.clear();
       if let Some(header) = header.take() {
-        args.insert(header, text);
+        args.insert(header, text_val);
       } else {
-        let mut header = "";
         loop {
           let header = format!("{}", param_id);
           param_id += 1;
           if args.get(&header).is_none() {
-            args.insert(header, text);
+            args.insert(header, text_val);
             break
           }
         }
       }
-      text = String::new();
     };
 
     while let Some(c) = input.chars().next() {
@@ -736,7 +737,7 @@ impl Text {
           text = String::new();
         },
         '|' if deep == 0 => {
-          wrap_or_gen_header();
+          wrap_or_gen_header(&mut text, &mut header);
         },
         /*
         ',' if deep == 0 => {
@@ -758,7 +759,7 @@ impl Text {
         },
         */
         '}' if deep == 0 => {
-          wrap_or_gen_header();
+          wrap_or_gen_header(&mut text, &mut header);
           break;
         },
         '{' => {
@@ -779,11 +780,13 @@ impl Text {
     let mut subs = HashSet::new();
 
     let com = args.remove("0").ok_or_else(|| nom::Err::Error(WikiError::TemplateHasNoHeader))?;
-    let args = args.into_iter().map(|(arg, value)| {
-      Ok((arg, Self::parse_text(&value, &mut subs)?.1))
-    }).collect::<Result<HashMap<_, _>, _>>()?;
+    let mut new_args = HashMap::new();
+    for (arg, value) in args {
+      new_args.insert(arg, Self::parse_text(&value, &mut subs)?.1);
+    }
+    let args = new_args;
 
-    let mut piece = Piece::Template(PieceParams {
+    let piece = Piece::Template(PieceParams {
       section: SectionSpecies::Unknown,
       com,
       args,
