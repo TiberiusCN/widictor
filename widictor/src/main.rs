@@ -707,23 +707,25 @@ impl Text {
   fn template_parser(s: &str) -> IResult<&str, (Piece, HashSet<String>), WikiError<&str>> {
     let mut input = s;
     let mut header = None;
-    let mut text = String::new();
+    let mut text_begin = 0;
+    let mut text_length = 0;
 
     let mut param_id = 0;
     let mut deep = 0;
     let mut args = HashMap::new();
 
-    let mut wrap_or_gen_header = |text: &mut String, header: &mut Option<String>| {
-      let text_val = text.clone();
-      text.clear();
+    let mut wrap_or_gen_header = |text_begin: &mut usize, text_length: &mut usize, header: &mut Option<&str>| {
+      let text: &str = s.substr_by_symbols(*text_begin, *text_length);
+      *text_begin += *text_length;
+      *text_length = 0;
       if let Some(header) = header.take() {
-        args.insert(header, text_val);
+        args.insert(header.to_string(), text);
       } else {
         loop {
           let header = format!("{}", param_id);
           param_id += 1;
           if args.get(&header).is_none() {
-            args.insert(header, text_val);
+            args.insert(header, text);
             break
           }
         }
@@ -733,11 +735,13 @@ impl Text {
     while let Some(c) = input.chars().next() {
       match c {
         '=' if deep == 0 => {
-          header = Some(text);
-          text = String::new();
+          header = Some(s.substr_by_symbols(text_begin, text_length));
+          text_begin = text_begin + text_length + 1;
+          text_length = 0;
         },
         '|' if deep == 0 => {
-          wrap_or_gen_header(&mut text, &mut header);
+          wrap_or_gen_header(&mut text_begin, &mut text_length, &mut header);
+          text_length += 1;
         },
         /*
         ',' if deep == 0 => {
@@ -759,19 +763,19 @@ impl Text {
         },
         */
         '}' if deep == 0 => {
-          wrap_or_gen_header(&mut text, &mut header);
+          wrap_or_gen_header(&mut text_begin, &mut text_length, &mut header);
           break;
         },
         '{' => {
           deep += 1;
-          text.push(c);
+          text_length += 1;
         },
         '}' => {
           deep -= 1;
-          text.push(c);
+          text_length += 1;
         },
-        c => {
-          text.push(c);
+        _ => {
+          text_length += 1;
         },
       }
       input = &input[c.len_utf8()..];
@@ -788,7 +792,7 @@ impl Text {
 
     let piece = Piece::Template(PieceParams {
       section: SectionSpecies::Unknown,
-      com,
+      com: com.to_owned(),
       args,
     });
 
@@ -840,7 +844,7 @@ impl Text {
     let mut pieces = Vec::new();
 
     while !input.is_empty() {
-      if let Ok((tail, (mut template, sub))) = Self::template(input) {
+      if let Ok((tail, (template, sub))) = Self::template(input) {
         for sub in sub {
           subs.insert(sub);
         }
@@ -986,6 +990,26 @@ struct PieceParams {
   section: SectionSpecies,
   com: String,
   args: HashMap<String, Vec<Piece>>,
+}
+
+trait SubStr {
+  fn substr_by_symbols<'a>(&'a self, begin: usize, length: usize) -> &'a Self;
+  fn remain_by_symbols<'a>(&'a self, begin: usize) -> &'a Self;
+}
+impl SubStr for str {
+  fn substr_by_symbols<'a>(&'a self, begin: usize, length: usize) -> &'a Self {
+    let begin = self.chars().take(begin).fold(0, |acc, val| acc+val.len_utf8());
+    let length = self.chars().skip(begin).take(length).fold(0, |acc, val| acc+val.len_utf8());
+    &self[begin..length]
+    // unsafe {
+    //   std::str::from_utf8_unchecked(&self.as_bytes()[begin..begin+length])
+    // }
+  }
+
+  fn remain_by_symbols<'a>(&'a self, begin: usize) -> &'a Self {
+    let begin = self.chars().take(begin).fold(0, |acc, val| acc+val.len_utf8());
+    &self[begin..]
+  }
 }
 
 // {} — hide from translation
