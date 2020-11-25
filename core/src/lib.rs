@@ -1,3 +1,6 @@
+use std::fs::create_dir;
+use std::path::PathBuf;
+
 struct Connection {}
 struct Word {}
 
@@ -35,4 +38,25 @@ struct Text {
 struct Lesson {
   text: String,
   database: Connection,
+}
+
+pub struct Config {
+  pub user_dir: PathBuf,
+  pub language_dir: PathBuf,
+}
+
+impl Config {
+  fn open_user(&self, user: &str) -> Result<(), std::io::Error> {
+    todo!()
+  }
+  
+  fn create_user(&self, user: &str) -> Result<(), std::io::Error> {
+    let user_root = self.user_dir.join(user);
+    create_dir(user_root)?;
+    todo!()
+  }
+  
+  pub fn user(&self, user: &str) -> User {
+    todo!()
+  }
 }
