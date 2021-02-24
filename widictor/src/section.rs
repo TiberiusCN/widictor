@@ -1,7 +1,6 @@
-use crate::wiki_error::WikiError;
-
 #[derive(Debug, PartialEq, std::cmp::Eq, std::hash::Hash, Clone, Copy)]
 pub enum Section {
+  Null,
   Unknown,
 
   Declension,
@@ -38,6 +37,12 @@ pub enum Section {
   Particle,
 }
 
+impl Default for Section {
+  fn default() -> Self {
+    Self::Null
+  }
+}
+
 impl Section {
   pub(crate) fn species(&self) -> Option<usize> {
     Some(match self {
@@ -52,7 +57,7 @@ impl Section {
       Self::Synonyms => 8,
       Self::Antonyms => 9,
 
-      Self::Unknown | Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Determiner | Self::Contraction => return None,
+      Self::Null | Self::Unknown | Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Determiner | Self::Contraction => return None,
     })
   }
 

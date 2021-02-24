@@ -3,9 +3,9 @@ members = [
   "widictor",
   #"templates/noun",
   #"templates/verb",
-  "templates/derived",
-  "database",
-  "template",
+  #"templates/derived",
+  #"database",
+  #"template",
   "remote",
-  "core",
+  #"core",
 ]

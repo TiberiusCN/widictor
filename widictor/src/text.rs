@@ -1,5 +1,14 @@
+use std::collections::{HashMap, HashSet};
+use nom::*;
+use crate::wiki_error::WikiError;
+use crate::substr::SubStr;
+pub use piece::Piece;
+pub use self::piece::PieceParams;
+
+mod piece;
+
 #[derive(Debug, Clone)]
-enum Text {
+pub enum Text {
   Text(Vec<Piece>),
   List(u8, Vec<Piece>),
 }
@@ -69,8 +78,7 @@ impl Text {
           }
           multi += 1;
         },
-        ')' => {
-          multi -= 1;
+        ')' => {multi -= 1;
           if multi == 0 {
             alts.push(text);
             text = String::new();
@@ -106,7 +114,6 @@ impl Text {
     let args = new_args;
 
     let piece = Piece::Template(PieceParams {
-      section: SectionSpecies::Unknown,
       com: com.to_owned(),
       args,
     });
@@ -138,7 +145,7 @@ impl Text {
   named!(external_link<&str, (&str, Option<&str>), WikiError<&str>>, delimited!(Self::external_link_open, Self::any_link, Self::external_link_close));
   named!(list<&str, usize, WikiError<&str>>, map!(take_while1!(|c| c == '#' || c == '*' || c == ':'), |r| r.len())); // it works only in the beginning
 
-  fn parse_any<'a>(mut input: &'a str, subs: &mut HashSet<String>) -> IResult<(), Self, WikiError<&'a str>> {
+  pub fn parse<'a>(mut input: &'a str, subs: &mut HashSet<String>) -> IResult<(), Self, WikiError<&'a str>> {
     let list = Self::list(input).map(|(tail, deep)| {
       input = tail;
       deep
@@ -211,6 +218,7 @@ impl Text {
     Ok(((), pieces))
   }
 
+  /*
   fn text(&self, lemma: &mut Lemma, section: &SectionSpecies, wiki: &Wiki) {
     match self {
       Self::Text(texts) => {
@@ -228,4 +236,5 @@ impl Text {
       },
     }
   }
+  */
 }

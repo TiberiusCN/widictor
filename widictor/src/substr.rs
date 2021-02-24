@@ -1,4 +1,4 @@
-trait SubStr {
+pub(crate) trait SubStr {
   fn substr_by_symbols<'a>(&'a self, begin: usize, length: usize) -> &'a Self;
   fn remain_by_symbols<'a>(&'a self, begin: usize) -> &'a Self;
 }

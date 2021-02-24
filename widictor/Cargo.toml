@@ -18,8 +18,8 @@ thiserror = "1.0"
 log = "0.4"
 seq = "0.5"
 
-reqwest = { version = "0.10", features = ["blocking"] }
+#reqwest = { version = "0.10", features = ["blocking"] }
 
-template = { path = "../template" }
+#template = { path = "../template" }
 remote = { path = "../remote" }
-database = { path = "../database" }
+#database = { path = "../database" }

@@ -1,10 +1,19 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone)]
-enum Piece {
+pub enum Piece {
   Raw(String),
   Template(PieceParams),
 }
 
+#[derive(Debug, Clone)]
+pub struct PieceParams {
+  pub com: String,
+  pub args: HashMap<String, Vec<Piece>>,
+}
+
 impl Piece {
+  /*
   fn text(&self, prefix: &str, lemma: &mut Lemma, suffix: &str, section: &SectionSpecies, wiki: &Wiki) {
     match self {
       Self::Raw(raw) => if !raw.is_empty() { lemma.append_value(prefix, raw, suffix); },
@@ -58,4 +67,5 @@ impl Piece {
       },
     }
   }
+  */
 }

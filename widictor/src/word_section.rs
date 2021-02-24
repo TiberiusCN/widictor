@@ -5,10 +5,11 @@ use nom::*;
 use crate::section::Section;
 use crate::wiki_error::WikiError;
 
-#[derive(Debug, Clone, PartialEq)]
-struct WordSection {
-  name: Section,
-  level: usize,
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct WordSection<T> {
+  pub name: Section,
+  pub level: usize,
+  pub children: Vec<T>,
 }
 
 /*
@@ -20,7 +21,7 @@ struct WordSectionTree {
 }
 */
 
-impl WordSection {
+impl WordSection<()> {
   named!(word_section1<&str, &str, WikiError<&str>>, delimited!(tag!("==="), take_while1!(|c: char| c.is_alphanumeric() || c.is_whitespace()), tag!("===")));
   named!(word_section2<&str, &str, WikiError<&str>>, delimited!(tag!("===="), take_while1!(|c: char| c.is_alphanumeric() || c.is_whitespace()), tag!("====")));
   named!(word_section3<&str, &str, WikiError<&str>>, delimited!(tag!("====="), take_while1!(|c: char| c.is_alphanumeric() || c.is_whitespace()), tag!("=====")));
@@ -31,7 +32,7 @@ impl WordSection {
            map!(Self::word_section3, |s| { (s, 3) })
          ));
 
-  fn parse(input: &str) -> IResult<(), Self, WikiError<&str>> {
+  pub fn parse(input: &str) -> IResult<(), Self, WikiError<&str>> {
     let value = Self::word_section(input)?;
     let tail = value.0;
     if !tail.is_empty() { return Err(WikiError::UnexpectedTail(tail).into()); }
@@ -41,11 +42,43 @@ impl WordSection {
     Ok(((), Self {
       name: section,
       level: level - 1,
+      children: Vec::new(),
     }))
   }
 }
 
-impl Conflictable for WordSection {
+impl<T> WordSection<T> {
+  pub fn fold_convert<N, TtoN: FnMut(Vec<N>, T) -> Vec<N>>(self, mut conv: TtoN) -> WordSection<N> {
+    WordSection {
+      name: self.name,
+      level: self.level,
+      children: self.children.into_iter().fold(Vec::new(), &mut conv),
+    }
+  }
+  pub fn convert<N, TtoN: FnMut(T) -> N>(self, mut conv: TtoN) -> WordSection<N> {
+    WordSection {
+      name: self.name,
+      level: self.level,
+      children: self.children.into_iter().map(&mut conv).collect(),
+    }
+  }
+  pub fn try_convert<N, E, TtoN: FnMut(T) -> Result<N, E>>(self, mut conv: TtoN) -> Result<WordSection<N>, E> {
+    Ok(WordSection {
+      name: self.name,
+      level: self.level,
+      children: self.children.into_iter().map(&mut conv).collect::<Result<_, E>>()?,
+    })
+  }
+  pub fn empty() -> Self {
+    Self {
+      name: Section::Null,
+      level: 0,
+      children: Vec::new(),
+    }
+  }
+}
+
+impl<T> Conflictable for WordSection<T> {
   fn conflict(&self, parent: &Self) -> bool {
     self.level > parent.level || (self.level == parent.level && self.name.species() == parent.name.species())
   }
@@ -84,15 +117,15 @@ fn test_parse_section() {
     ("===Noun====", None),
   ]
     .iter()
-    .map(|(q, a)| (WordSection::parse(q).ok().map(|v| v.1), a.map(|a| WordSection { level: a.0, name: a.1 })))
+    .map(|(q, a)| (WordSection::parse(q).ok().map(|v| v.1), a.map(|a| WordSection { level: a.0, name: a.1, children: Vec::new() })))
     .for_each(|(q, a)| assert_eq!(q, a));
 }
 
-trait Conflictable {
+pub trait Conflictable {
   fn conflict(&self, other: &Self) -> bool;
 }
 
-enum Seq<T> {
+pub enum Seq<T> {
   None,
   Rc(Rc<T>, Rc<Seq<T>>),
 }
@@ -104,18 +137,18 @@ impl<T> Default for Seq<T> {
 }
 
 impl<T> Seq<T> {
-  fn insert(self: Rc<Self>, value: T) -> Rc<Self> {
+  pub fn insert(self: Rc<Self>, value: T) -> Rc<Self> {
     Self::rc(value, self)
   }
-  fn rc(value: T, root: Rc<Self>) -> Rc<Self> {
+  pub fn rc(value: T, root: Rc<Self>) -> Rc<Self> {
     Rc::new(Self::Rc(Rc::new(value), root))
   }
-  fn into_iter(self: Rc<Self>) -> SeqIter<T> {
+  pub fn into_iter(self: Rc<Self>) -> SeqIter<T> {
     SeqIter(self)
   }
 }
 
-struct SeqIter<T>(Rc<Seq<T>>);
+pub struct SeqIter<T>(Rc<Seq<T>>);
 
 impl<T> Iterator for SeqIter<T> {
   type Item = Rc<T>;
@@ -147,17 +180,17 @@ impl<T: Conflictable> Seq<T> {
   }
 }
 
-struct Tree<T: Conflictable>(Vec<Rc<Seq<T>>>);
+pub struct Tree<T: Conflictable>(Vec<Rc<Seq<T>>>);
 
 impl<T: Conflictable> Default for Tree<T> {
   fn default() -> Self { Self(Vec::new()) }
 }
 
 impl<T: Conflictable> Tree<T> {
-  fn new() -> Self {
+  pub fn new() -> Self {
     Self::default()
   }
-  fn graft(mut self, value: T) -> Self {
+  pub fn graft(mut self, value: T) -> Self {
     let root = self.0.pop().unwrap_or_default();
     let (value, branch) = root.graft(value);
     if let Some(value) = branch {
@@ -166,14 +199,14 @@ impl<T: Conflictable> Tree<T> {
     self.0.push(value);
     self
   }
-  fn into_iter(mut self) -> impl Iterator<Item = Rc<Seq<T>>> {
+  pub fn into_iter(self) -> impl Iterator<Item = Rc<Seq<T>>> {
     self.0.into_iter()
   }
 }
 
 impl<T: Conflictable> FromIterator<T> for Tree<T> {
   fn from_iter<Q: IntoIterator<Item = T>>(iter: Q) -> Self {
-    iter.into_iter().fold(Self::new(), |mut acc, sec| acc.graft(sec))
+    iter.into_iter().fold(Self::new(), |acc, sec| acc.graft(sec))
   }
 }
 

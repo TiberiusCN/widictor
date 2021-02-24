@@ -24,3 +24,9 @@ impl<I> From<WikiError<I>> for nom::Err<WikiError<I>> {
     nom::Err::Error(src)
   }
 }
+
+impl<I> WikiError<I> {
+  pub fn filtered(&self) -> bool {
+    matches!(self, Self::Nom(_, _))
+  }
+}
