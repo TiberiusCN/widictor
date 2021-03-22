@@ -1,8 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use nom::*;
+use nom::{IResult, bytes::complete::tag, sequence::delimited};
 
 use crate::wiki_error::WikiError;
-
 use super::Text;
 
 #[derive(Debug, Clone)]
@@ -17,28 +16,31 @@ enum ArgType<'a> {
 }
 
 impl Template {
-  named!(open<&str, &str, WikiError<&str>>, tag!("{{"));
-  named!(separator<&str, &str, WikiError<&str>>, tag!("|"));
-  named!(close<&str, &str, WikiError<&str>>, tag!("}}"));
-  named!(template<&str, Vec<&str>, WikiError<&str>>,
-    delimited!(
+  fn open(src: &str) -> IResult<&str, &str, WikiError<&str>> {
+    Ok(tag("{{")(src)?)
+  }
+  fn separator(src: &str) -> IResult<&str, &str, WikiError<&str>> {
+    Ok(tag("|")(src)?)
+  }
+  fn close(src: &str) -> IResult<&str, &str, WikiError<&str>> {
+    Ok(tag("}}")(src)?)
+  }
+  fn template(src: &str) -> IResult<&str, Vec<&str>, WikiError<&str>> {
+    Ok(delimited(
       Self::open,
       Self::template_parser,
       Self::close
-    )
-  );
+    )(src)?)
+  }
   fn arg(s: &str) -> IResult<&str, &str, WikiError<&str>> {
     let mut br = 0;
     let mut length = 0;
     for c in s.chars() {
       match c {
-        '|' | '}' => {
-          if br == 0 {
-            break;
-          }
-        },
+        '|' | '}' if br == 0 => break,
         '{' => br += 1,
         '}' => br -= 1,
+        _ => {},
       }
       length += c.len_utf8();
     }
@@ -57,12 +59,12 @@ impl Template {
       s = Self::separator(s)?.0;
     }
   }
-  fn parse<'a>(s: &'a str, subs: &mut HashSet<String>) -> IResult<&'a str, Self, WikiError<&'a str>> {
+  pub fn parse<'a>(s: &'a str, subs: &mut HashSet<String>) -> IResult<&'a str, Self, WikiError<&'a str>> {
     let (tail, args) = Self::template(s)?;
     // unwrapped:
     //   ((X,Y)) → alt
     //   X<…> → params
-    let mut args = args.into_iter();
+    let args = args.into_iter();
     let mut unordered = Vec::new();
     let mut params = HashMap::with_capacity(args.len());
     for v in args {

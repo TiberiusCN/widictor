@@ -1,7 +1,6 @@
 use std::{collections::{HashMap, HashSet}, rc::Rc};
 use language::Language;
 use text::Text;
-use text::Piece;
 use word_section::WordSection;
 //use text::Text;
 /*
@@ -93,32 +92,36 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
     }
     acc
   });
-  let lang = lang.try_convert(|src: String| -> Result<Text, ()> {
-    Text::parse(&src, subwords).map_err(|e| {
-      eprintln!("\x1b[31mError\x1b[0m: {:?} during parsing «{}»", e, src);
-      ()
-    }).map(|v| v.1)
-  })?;
-  let lang = lang.convert(|text: Text| -> String {
-    let (mut line, pieces) = match text {
-      Text::Text(pieces) => ("".to_owned(), pieces),
-      Text::List(level, pieces) => {
-        let mut prefix = String::new();
-        for _ in 0..level {
-          prefix += "*";
-        }
-        prefix += " ";
-        (prefix, pieces)
-      },
-    };
-    for (id, piece) in pieces.into_iter().enumerate() {
-      let value = match piece {
-        Piece::Raw(s) => s,
-        Piece::Template(params) => format!("{{COM:{}}}", params.com),
-      };
-      line += format!("«{}:{}»", id, value).as_str();
+  let lang = lang.try_convert(|src: String| -> Result<Vec<Text>, ()> {
+    let mut src = src.as_str();
+    let mut out = Vec::new();
+    while !src.is_empty() {
+      let (s, text) = Text::parse(&src, subwords).map_err(|e| {
+        eprintln!("\x1b[31mError\x1b[0m: {:?} during parsing «{}»", e, src);
+        ()
+      })?;
+      src = s;
+      out.push(text);
     }
-    line
+    Ok(out)
+  })?;
+  let lang = lang.convert(|text: Vec<Text>| -> String {
+    let mut out = String::new();
+    for text in text {
+      if !out.is_empty() { out += " "; }
+      match text {
+        Text::Raw(raw) => out += raw.as_str(),
+        Text::Tab(tab) => {
+          for _ in (0..).take(tab as usize) {
+            out += "»";
+          }
+        }
+        Text::Template(template) => {
+          out += format!("{{COM}}").as_str();
+        }
+      }
+    }
+    out
   });
   Ok(lang.subdivide())
 }

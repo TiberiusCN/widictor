@@ -1,6 +1,5 @@
 use std::{iter::FromIterator, rc::Rc};
-
-use nom::*;
+use nom::{IResult, branch::alt, bytes::complete::{tag, take_while1}, combinator::map, sequence::delimited};
 
 use crate::section::Section;
 use crate::wiki_error::WikiError;
@@ -22,16 +21,22 @@ struct WordSectionTree {
 */
 
 impl WordSection<()> {
-  named!(word_section1<&str, &str, WikiError<&str>>, delimited!(tag!("==="), take_while1!(|c: char| c.is_alphanumeric() || c.is_whitespace()), tag!("===")));
-  named!(word_section2<&str, &str, WikiError<&str>>, delimited!(tag!("===="), take_while1!(|c: char| c.is_alphanumeric() || c.is_whitespace()), tag!("====")));
-  named!(word_section3<&str, &str, WikiError<&str>>, delimited!(tag!("====="), take_while1!(|c: char| c.is_alphanumeric() || c.is_whitespace()), tag!("=====")));
-  named!(word_section<&str, (&str, usize), WikiError<&str>>,
-         alt!(
-           map!(Self::word_section1, |s| { (s, 1) }) |
-           map!(Self::word_section2, |s| { (s, 2) }) |
-           map!(Self::word_section3, |s| { (s, 3) })
-         ));
-
+  fn word_section1(src: &str) -> IResult<&str, &str, WikiError<&str>> {
+    Ok(delimited(tag("==="), take_while1(|c: char| c.is_alphanumeric() || c.is_whitespace()), tag("==="))(src)?)
+  }
+  fn word_section2(src: &str) -> IResult<&str, &str, WikiError<&str>> {
+    Ok(delimited(tag("===="), take_while1(|c: char| c.is_alphanumeric() || c.is_whitespace()), tag("===="))(src)?)
+  }
+  fn word_section3(src: &str) -> IResult<&str, &str, WikiError<&str>> {
+    Ok(delimited(tag("====="), take_while1(|c: char| c.is_alphanumeric() || c.is_whitespace()), tag("====="))(src)?)
+  }
+  fn word_section(src: &str) -> IResult<&str, (&str, usize), WikiError<&str>> {
+    Ok(alt((
+      map(Self::word_section1, |s: &str| -> (&str, usize) { (s, 1) }),
+      map(Self::word_section2, |s: &str| -> (&str, usize) { (s, 2) }),
+      map(Self::word_section3, |s: &str| -> (&str, usize) { (s, 3) })
+    ))(src)?)
+  }
   pub fn parse(input: &str) -> IResult<(), Self, WikiError<&str>> {
     let value = Self::word_section(input)?;
     let tail = value.0;

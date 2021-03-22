@@ -1,6 +1,6 @@
 use std::rc::Rc;
+use nom::{IResult, bytes::complete::{tag, take_while1}, sequence::delimited};
 
-use nom::*;
 use crate::{wiki_error::WikiError, word_section::{Tree, WordSection}};
 
 #[derive(Debug)]
@@ -11,7 +11,9 @@ pub struct Language<T, S: std::convert::Into<Rc<WordSection<T>>>> {
 }
 
 impl Language<(), WordSection<()>> {
-  named!(language<&str, &str, WikiError<&str>>, delimited!(tag!("=="), take_while1!(|c: char| c.is_alphabetic() || c.is_whitespace()), tag!("==")));
+  fn language(src: &str) -> IResult<&str, &str, WikiError<&str>> {
+    Ok(delimited(tag("=="), take_while1(|c: char| c.is_alphabetic() || c.is_whitespace()), tag("=="))(src)?)
+  }
 
   pub fn parse(input: &str) -> IResult<&str, Self, WikiError<&str>> {
     let value = Self::language(input)?;
