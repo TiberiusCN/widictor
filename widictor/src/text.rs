@@ -2,124 +2,22 @@ use std::collections::{HashMap, HashSet};
 use nom::*;
 use crate::wiki_error::WikiError;
 use crate::substr::SubStr;
-pub use piece::Piece;
-pub use self::piece::PieceParams;
 
-mod piece;
+mod template;
+pub use template::Template;
 
 #[derive(Debug, Clone)]
 pub enum Text {
-  Text(Vec<Piece>),
-  List(u8, Vec<Piece>),
+  Raw(String),
+  Tab(u8),
+  Template(Template),
 }
 
 impl Text {
-  named!(template_open<&str, &str, WikiError<&str>>, tag!("{{"));
-  named!(template_separator<&str, &str, WikiError<&str>>, tag!("|"));
-  named!(template_close<&str, &str, WikiError<&str>>, tag!("}}"));
   named!(link_open<&str, &str, WikiError<&str>>, tag!("[["));
   named!(link_close<&str, &str, WikiError<&str>>, tag!("]]"));
   named!(external_link_open<&str, &str, WikiError<&str>>, tag!("["));
   named!(external_link_close<&str, &str, WikiError<&str>>, tag!("]"));
-  named!(template<&str, (Piece, HashSet<String>), WikiError<&str>>,
-    delimited!(
-      Self::template_open,
-      Self::template_parser,
-      Self::template_close
-    )
-  );
-  fn template_parser(s: &str) -> IResult<&str, (Piece, HashSet<String>), WikiError<&str>> {
-    let mut input = s;
-    let mut header = None;
-    let mut text_begin = 0;
-    let mut text_length = 0;
-
-    let mut param_id = 0;
-    let mut deep = 0;
-    let mut args = HashMap::new();
-
-    let mut wrap_or_gen_header = |text_begin: &mut usize, text_length: &mut usize, header: &mut Option<&str>| {
-      let text: &str = s.substr_by_symbols(*text_begin, *text_length);
-      *text_begin += *text_length;
-      *text_length = 0;
-      if let Some(header) = header.take() {
-        args.insert(header.to_string(), text);
-      } else {
-        loop {
-          let header = format!("{}", param_id);
-          param_id += 1;
-          if args.get(&header).is_none() {
-            args.insert(header, text);
-            break
-          }
-        }
-      }
-    };
-
-    while let Some(c) = input.chars().next() {
-      match c {
-        '=' if deep == 0 => {
-          header = Some(s.substr_by_symbols(text_begin, text_length));
-          text_begin = text_begin + text_length + 1;
-          text_length = 0;
-        },
-        '|' if deep == 0 => {
-          wrap_or_gen_header(&mut text_begin, &mut text_length, &mut header);
-          text_length += 1;
-        },
-        /*
-        ',' if deep == 0 => {
-          alts.push(text);
-          text = String::new();
-        },
-        '(' => {
-          if multi == 0 {
-            if text.is_empty()
-          }
-          multi += 1;
-        },
-        ')' => {multi -= 1;
-          if multi == 0 {
-            alts.push(text);
-            text = String::new();
-          }
-        },
-        */
-        '}' if deep == 0 => {
-          wrap_or_gen_header(&mut text_begin, &mut text_length, &mut header);
-          break;
-        },
-        '{' => {
-          deep += 1;
-          text_length += 1;
-        },
-        '}' => {
-          deep -= 1;
-          text_length += 1;
-        },
-        _ => {
-          text_length += 1;
-        },
-      }
-      input = &input[c.len_utf8()..];
-    }
-
-    let mut subs = HashSet::new();
-
-    let com = args.remove("0").ok_or_else(|| nom::Err::Error(WikiError::TemplateHasNoHeader))?;
-    let mut new_args = HashMap::new();
-    for (arg, value) in args {
-      new_args.insert(arg, Self::parse_text(&value, &mut subs)?.1);
-    }
-    let args = new_args;
-
-    let piece = Piece::Template(PieceParams {
-      com: com.to_owned(),
-      args,
-    });
-
-    Ok((input, (piece, subs)))
-  }
   fn any_link(input: &str) -> IResult<&str, (&str, Option<&str>), WikiError<&str>> {
     let mut end = 0;
     let mut word_end = None;
@@ -145,7 +43,7 @@ impl Text {
   named!(external_link<&str, (&str, Option<&str>), WikiError<&str>>, delimited!(Self::external_link_open, Self::any_link, Self::external_link_close));
   named!(list<&str, usize, WikiError<&str>>, map!(take_while1!(|c| c == '#' || c == '*' || c == ':'), |r| r.len())); // it works only in the beginning
 
-  pub fn parse<'a>(mut input: &'a str, subs: &mut HashSet<String>) -> IResult<(), Self, WikiError<&'a str>> {
+  pub fn parse<'a>(mut input: &'a str, subs: &mut HashSet<String>) -> IResult<&'a str, Self, WikiError<&'a str>> {
     let list = Self::list(input).map(|(tail, deep)| {
       input = tail;
       deep
