@@ -13,7 +13,7 @@ pub enum Text {
 }
 
 impl Text {
-  TODO: quotation, trim
+  // TODO: quotation, trim
   fn link_open(src: &str) -> IResult<&str, &str, WikiError<&str>> {
     Ok(tag("[[")(src)?)
   }

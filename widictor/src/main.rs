@@ -1,5 +1,6 @@
 use std::{collections::{HashMap, HashSet}, rc::Rc};
 use language::Language;
+use scribunto::ToLuaMessage;
 use text::Text;
 use word_section::WordSection;
 //use text::Text;
@@ -127,6 +128,11 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
 }
 
 fn main() {
+  let f = std::fs::OpenOptions::new().append(true).open("/tmp/q").unwrap();
+  let mut f = scribunto::LuaSender::from(f);
+  //f.encode(ToLuaMessage::RegisterLibrary { name: "mw_interface".into(), functions: Default::default() }).unwrap();
+  f.encode(ToLuaMessage::GetStatus).unwrap();
+  return;
   let arg = std::env::args().nth(1).unwrap();
   scan(&arg);
 }

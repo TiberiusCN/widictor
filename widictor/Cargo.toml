@@ -22,4 +22,5 @@ seq = "0.5"
 
 #template = { path = "../template" }
 remote = { path = "../remote" }
+scribunto = { path = "../scribunto" }
 #database = { path = "../database" }
