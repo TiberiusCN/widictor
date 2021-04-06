@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt::Display, io::Write, str::FromStr};
+use std::{collections::HashMap, fmt::Display, io::Write};
+use nom::{IResult, bytes::complete::{tag, take_while1}};
+
+mod php_error;
+use php_error::PhpError;
 
 macro_rules! transparent_lua {
   ($wrap:ty, $raw:ty) => {
@@ -36,13 +40,99 @@ impl<W: Write> LuaSender<W> {
   }
 }
 
-pub trait LuaType: 'static + Display + FromStr {}
+struct Parser;
+impl Parser {
+  fn prefix(src: &str) -> IResult<&str, &str, PhpError<&str>> {
+    let (src, value) = take_while1(|s: char| s.is_ascii_alphanumeric() || s == '_')(src)?;
+    let (src, _) = tag(":")(src)?;
+    Ok((src, value))
+  }
+  fn usize_val(src: &str) -> IResult<&str, usize, PhpError<&str>> {
+    let (src, val) = take_while1(|s: char| s.is_numeric())(src)?;
+    let val: usize = val.parse().map_err(PhpError::from)?;
+    Ok((src, val))
+  }
+  fn i32_val(src: &str) -> IResult<&str, i32, PhpError<&str>> {
+    let (src, val) = take_while1(|s: char| s.is_numeric() || s == '-')(src)?;
+    let val: i32 = val.parse().unwrap();
+    Ok((src, val))
+  }
+  fn f32_val(src: &str) -> IResult<&str, f32, PhpError<&str>> {
+    tag::<_, _, PhpError<&str>>("INF")(src).map(|(src, _): (&str, &str)| (src, f32::INFINITY))
+      .or_else(|_| tag::<_, _, PhpError<&str>>("-INF")(src).map(|(src, _)| (src, f32::NEG_INFINITY)))
+      .or_else(|_| tag::<_, _, PhpError<&str>>("NAN")(src).map(|(src, _)| (src, f32::NAN)))
+      .or_else(|_| {
+        let (src, val) = take_while1(|s: char| s.is_numeric() || s == '-' || s ==',' || s == '.')(src)?;
+        let val: f32 = val.replace(',', ".").parse().map_err(PhpError::from)?;
+        Ok((src, val))
+      })
+  }
+  fn str_val(src: &str) -> IResult<&str, String, PhpError<&str>> {
+    let (src, _) = tag("\"")(src)?;
+    let mut out = String::new();
+    let mut size = 0;
+    let mut slash = false;
+    for c in src.chars() {
+      if slash {
+        out.push(c);
+        slash = false;
+      } else {
+        match c {
+          '\\' => slash = true,
+          '"' => break,
+          c => out.push(c),
+        }
+      }
+      size += c.len_utf8();
+    }
+    let src = &src[size..];
+    let (src, _) = tag("\"")(src)?;
+    let mut val = String::new();
+    let mut slash = false;
+    for c in out.chars() {
+      if slash {
+        val.push(match c {
+          't' => '\t',
+          'r' => '\r',
+          'n' => '\n',
+          c => c,
+        });
+        slash = false;
+      } else {
+        if c == '\\' {
+          slash = true;
+        } else {
+          val.push(c);
+        }
+      }
+    }
+    Ok((src, val))
+  }
+  fn finite(src: &str) -> IResult<&str, (), PhpError<&str>> {
+    tag(";")(src).map(|(src, _)| (src, ()))
+  }
+}
+
+pub trait LuaType: 'static + Display {
+}
 pub trait LuaNameType: LuaType + Eq + std::hash::Hash {}
 impl LuaNameType for LuaString {}
 impl LuaNameType for LuaInteger {}
 
 #[derive(PartialEq, Eq, Hash, Default)]
 pub struct LuaString(String);
+impl LuaString {
+  fn parse(src: &str) -> IResult<&str, Self, PhpError<&str>> {
+    let (src, _) = Parser::prefix("s")?;
+    let (src, ch_len) = Parser::usize_val(src)?;
+    let (src, val) = Parser::str_val(src)?;
+    if val.len() != ch_len as usize {
+      Err(PhpError::BadLength(ch_len as _, val.len() as _).into())
+    } else {
+      Ok((src, Self::from(val)))
+    }
+  }
+}
 impl<T: Into<String>> From<T> for LuaString {
   fn from(src: T) -> Self {
     let src: String = src.into();
@@ -69,7 +159,15 @@ transparent_lua!(LuaInteger, i32);
 pub struct LuaFloat(f32);
 impl Display for LuaFloat {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.0)
+    if self.0.is_nan() {
+      let sign = if self.0.is_sign_negative() { "-" } else { "" };
+      write!(f, "{}nan", sign)
+    } else if self.0.is_infinite() {
+      let sign = if self.0.is_sign_negative() { "-" } else { "" };
+      write!(f, "{}inf", sign)
+    } else {
+      write!(f, "{}", self.0)
+    }
   }
 }
 impl LuaType for LuaFloat {}
