@@ -1,9 +1,20 @@
-use std::{collections::HashMap, fmt::Display, io::Write};
+pub use lua_array::LuaArray;
+pub use lua_float::LuaFloat;
+pub use lua_integer::LuaInteger;
+pub use lua_string::LuaString;
+pub use lua_table::LuaTable;
 use nom::{IResult, bytes::complete::{tag, take_while1}};
+use std::{fmt::Display, io::Write};
 
 mod php_error;
+mod lua_string;
+mod lua_integer;
+mod lua_float;
+mod lua_table;
+mod lua_array;
 use php_error::PhpError;
 
+#[macro_export]
 macro_rules! transparent_lua {
   ($wrap:ty, $raw:ty) => {
     impl From<$raw> for $wrap {
@@ -42,9 +53,21 @@ impl<W: Write> LuaSender<W> {
 
 struct Parser;
 impl Parser {
+  fn close(src: &str) -> IResult<&str, (), PhpError<&str>> {
+    let (src, _) = tag("}")(src)?;
+    Ok((src, ()))
+  }
+  fn open(src: &str) -> IResult<&str, (), PhpError<&str>> {
+    let (src, _) = tag("{")(src)?;
+    Ok((src, ()))
+  }
+  fn separator(src: &str) -> IResult<&str, (), PhpError<&str>> {
+    let (src, _) = tag(":")(src)?;
+    Ok((src, ()))
+  }
   fn prefix(src: &str) -> IResult<&str, &str, PhpError<&str>> {
     let (src, value) = take_while1(|s: char| s.is_ascii_alphanumeric() || s == '_')(src)?;
-    let (src, _) = tag(":")(src)?;
+    let (src, _) = Self::separator(src)?;
     Ok((src, value))
   }
   fn usize_val(src: &str) -> IResult<&str, usize, PhpError<&str>> {
@@ -111,143 +134,19 @@ impl Parser {
   fn finite(src: &str) -> IResult<&str, (), PhpError<&str>> {
     tag(";")(src).map(|(src, _)| (src, ()))
   }
+  fn any_lua(src: &str) -> IResult<&str, Box<dyn LuaType>, PhpError<&str>> {
+    LuaString::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) })
+      .or_else(|_| LuaInteger::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
+      .or_else(|_| LuaFloat::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
+      .or_else(|_| LuaTable::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
+  }
 }
 
-pub trait LuaType: 'static + Display {
+pub trait LuaType: 'static + Display + std::fmt::Debug {
 }
-pub trait LuaNameType: LuaType + Eq + std::hash::Hash {}
-impl LuaNameType for LuaString {}
-impl LuaNameType for LuaInteger {}
-
-#[derive(PartialEq, Eq, Hash, Default)]
-pub struct LuaString(String);
-impl LuaString {
-  fn parse(src: &str) -> IResult<&str, Self, PhpError<&str>> {
-    let (src, _) = Parser::prefix("s")?;
-    let (src, ch_len) = Parser::usize_val(src)?;
-    let (src, val) = Parser::str_val(src)?;
-    if val.len() != ch_len as usize {
-      Err(PhpError::BadLength(ch_len as _, val.len() as _).into())
-    } else {
-      Ok((src, Self::from(val)))
-    }
-  }
-}
-impl<T: Into<String>> From<T> for LuaString {
-  fn from(src: T) -> Self {
-    let src: String = src.into();
-    Self(src)
-  }
-}
-impl Display for LuaString {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, r#""{}""#, self.0)
-  }
-}
-impl LuaType for LuaString {}
-//transparent_lua!(LuaString, String);
-#[derive(PartialEq, Eq, Hash, Default)]
-pub struct LuaInteger(i32);
-impl Display for LuaInteger {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.0)
-  }
-}
-impl LuaType for LuaInteger {}
-transparent_lua!(LuaInteger, i32);
-#[derive(Default)]
-pub struct LuaFloat(f32);
-impl Display for LuaFloat {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    if self.0.is_nan() {
-      let sign = if self.0.is_sign_negative() { "-" } else { "" };
-      write!(f, "{}nan", sign)
-    } else if self.0.is_infinite() {
-      let sign = if self.0.is_sign_negative() { "-" } else { "" };
-      write!(f, "{}inf", sign)
-    } else {
-      write!(f, "{}", self.0)
-    }
-  }
-}
-impl LuaType for LuaFloat {}
-transparent_lua!(LuaFloat, f32);
-#[derive(Default)]
-pub struct LuaTable<T: LuaNameType>(HashMap<T, Box<dyn LuaType>>);
-impl<T: LuaNameType> AsMut<HashMap<T, Box<dyn LuaType>>> for LuaTable<T> {
-  fn as_mut(&mut self) -> &mut HashMap<T, Box<dyn LuaType>> {
-    &mut self.0
-  }
-}
-impl<T: LuaNameType> AsRef<HashMap<T, Box<dyn LuaType>>> for LuaTable<T> {
-  fn as_ref(&self) -> &HashMap<T, Box<dyn LuaType>> {
-    &self.0
-  }
-}
-impl<T: LuaNameType> LuaTable<T> {
-  pub fn insert<PB: LuaType, A: Into<T>, B: Into<PB>>(&mut self, property: A, value: B) {
-    self.as_mut().insert(property.into(), Box::new(value.into()));
-  }
-  pub fn insert_string<A: Into<T>, B: Into<LuaString>>(&mut self, property: A, value: B) {
-    self.insert(property.into(), value);
-  }
-  pub fn insert_integer<A: Into<T>, B: Into<LuaInteger>>(&mut self, property: A, value: B) {
-    self.insert(property.into(), value);
-  }
-  pub fn insert_float<A: Into<T>, B: Into<LuaFloat>>(&mut self, property: A, value: B) {
-    self.insert(property.into(), value);
-  }
-  pub fn insert_string_table<A: Into<T>, B: Into<LuaTable<LuaString>>>(&mut self, property: A, value: B) {
-    self.insert(property.into(), value);
-  }
-  pub fn insert_integer_table<A: Into<T>, B: Into<LuaTable<LuaInteger>>>(&mut self, property: A, value: B) {
-    self.insert(property.into(), value);
-  }
-}
-impl<T: LuaNameType> Display for LuaTable<T> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.write_str("{")?;
-    let mut i = self.0.iter().peekable();
-    while let Some((name, val)) = i.next() {
-      write!(f, "[{}]={}", name, val)?;
-      if i.peek().is_some() { f.write_str(",")?; }
-    }
-    f.write_str("}")
-  }
-}
-impl<T: LuaNameType> LuaType for LuaTable<T> {}
-#[derive(Default)]
-pub struct LuaArray<T: LuaNameType, V: LuaType>(HashMap<T, V>);
-impl<T: LuaNameType, V: LuaType> AsMut<HashMap<T, V>> for LuaArray<T, V> {
-  fn as_mut(&mut self) -> &mut HashMap<T, V> {
-    &mut self.0
-  }
-}
-impl<T: LuaNameType, V: LuaType> AsRef<HashMap<T, V>> for LuaArray<T, V> {
-  fn as_ref(&self) -> &HashMap<T, V> {
-    &self.0
-  }
-}
-impl<T: LuaNameType, V: LuaType> Display for LuaArray<T, V> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.write_str("{")?;
-    let mut i = self.0.iter().peekable();
-    while let Some((name, val)) = i.next() {
-      write!(f, "[{}]={}", name, val)?;
-      if i.peek().is_some() { f.write_str(",")?; }
-    }
-    f.write_str("}")
-  }
-}
-impl<T: LuaNameType, V: LuaType> LuaType for LuaArray<T, V> {}
-impl<T: LuaNameType, V: LuaType> From<LuaArray<T, V>> for LuaTable<T> {
-  fn from(src: LuaArray<T, V>) -> Self {
-    let mut out: HashMap<T, Box<dyn LuaType>> = HashMap::with_capacity(src.0.len());
-    for (a, b) in src.0 {
-      out.insert(a, Box::new(b));
-    }
-    Self(out)
-  }
+pub trait LuaNameType: LuaType + Eq + std::hash::Hash {
+  fn try_from_string(src: LuaString) -> Result<Box<Self>, LuaString>;
+  fn try_from_integer(src: LuaInteger) -> Result<Box<Self>, LuaInteger>;
 }
 
 pub enum ToLuaMessage {
@@ -304,4 +203,17 @@ pub enum FromLuaMessage {
 pub enum LuaResponse {
   Return { values: LuaTable<LuaString> },
   Error { value: LuaString, trace: LuaTable<LuaString> },
+}
+
+#[test]
+fn test() {
+  let (last, val) = LuaString::parse(r#"s:6:"A to Z";"#).unwrap();
+  assert!(last.is_empty());
+  assert_eq!(val, LuaString::from("A to Z"));
+  let (last, val) = LuaFloat::parse(r"d:-1.23;").unwrap();
+  assert!(last.is_empty());
+  assert_eq!(f32::from(val), -1.23);
+  let (last, val) = LuaInteger::parse(r"i:-882;").unwrap();
+  assert!(last.is_empty());
+  assert_eq!(i32::from(val), -882);
 }

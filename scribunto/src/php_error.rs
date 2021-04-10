@@ -4,17 +4,11 @@ use nom::error::{ErrorKind, ParseError};
 
 #[derive(Debug)]
 pub enum PhpError<I> {
-  Null,
-  BadSeparator(I),
-  UnknownPrefix(I),
   BadLength(u32, u32),
+  BadType,
+  UnexpectedPrefix(&'static str, String),
   Parse(Box<dyn std::error::Error>),
   Nom(I, ErrorKind),
-}
-impl<I> PhpError<I> {
-  pub fn null() -> Self {
-    Self::Null
-  }
 }
 impl<I> From<ParseIntError> for PhpError<I> {
   fn from(src: ParseIntError) -> Self {
