@@ -1,4 +1,4 @@
-use std::{any::Any, fmt::Display};
+use std::fmt::Display;
 use nom::IResult;
 use crate::{LuaInteger, LuaNameType, LuaType, Parser, php_error::PhpError};
 
@@ -20,6 +20,7 @@ impl LuaString {
       Ok((src, Self::from(val)))
     }
   }
+  pub fn to_raw(self) -> String { self.0 }
 }
 impl<T: Into<String>> From<T> for LuaString {
   fn from(src: T) -> Self {
@@ -34,10 +35,10 @@ impl Display for LuaString {
 }
 impl LuaType for LuaString {}
 impl LuaNameType for LuaString {
-  fn try_from_string(src: LuaString) -> Result<Self, LuaString> {
-    Ok(src)
+  fn try_from_string(src: LuaString) -> Result<Box<Self>, LuaString> {
+    Ok(Box::new(src))
   }
-  fn try_from_integer(src: LuaInteger) -> Result<Self, LuaInteger> {
-    Ok(Self::from(format!("{}", i32::from(src))))
+  fn try_from_integer(src: LuaInteger) -> Result<Box<Self>, LuaInteger> {
+    Ok(Box::new(Self::from(format!("{}", i32::from(src)))))
   }
 }

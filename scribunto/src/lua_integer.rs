@@ -14,6 +14,7 @@ impl LuaInteger {
     let (src, _) = Parser::finite(src)?;
     Ok((src, Self::from(val)))
   }
+  pub fn to_taw(self) -> i32 { self.0 }
 }
 impl Display for LuaInteger {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -24,7 +25,7 @@ impl LuaType for LuaInteger {}
 crate::transparent_lua!(LuaInteger, i32);
 impl LuaNameType for LuaInteger {
   fn try_from_string(src: LuaString) -> Result<Box<Self>, LuaString> {
-    let s: String = src.into();
+    let s: String = src.to_raw();
     if let Ok(i) = s.parse::<i32>() {
       Ok(Box::new(Self::from(i)))
     } else {

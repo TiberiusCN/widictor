@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 use nom::IResult;
 
-use crate::{LuaArray, LuaFloat, LuaInteger, LuaNameType, LuaString, LuaType, Parser, lua_any::LuaAny, php_error::PhpError};
+use crate::{LuaArray, LuaFloat, LuaInteger, LuaNameType, LuaString, LuaType, Parser, php_error::PhpError};
 
 #[derive(Default, Debug)]
 pub struct LuaTable<T: LuaNameType>(HashMap<T, Box<dyn LuaType>>);
@@ -72,13 +72,13 @@ impl<T: LuaNameType> LuaTable<T> {
     let mut src = src;
     for _ in 0..pairs {
       if let Ok((tmp, field)) = LuaString::parse(src) {
-        let (tmp, any) = LuaAny::parse(src)?;
-        fields.insert(field.try_from_string().map_err(|_| PhpError::BadType)?, any);
+        let (tmp, any) = Parser::any_lua(tmp)?;
+        fields.insert(*T::try_from_string(field).map_err(|_| PhpError::BadType)?, any);
         src = tmp;
       } else {
         let (tmp, field) = LuaInteger::parse(src)?;
-        let (tmp, any) = LuaAny::parse(src)?;
-        fields.insert(field.try_from_integer().map_err(|_| PhpError::BadType)?, any);
+        let (tmp, any) = Parser::any_lua(tmp)?;
+        fields.insert(*T::try_from_integer(field).map_err(|_| PhpError::BadType)?, any);
         src = tmp;
       }
     }

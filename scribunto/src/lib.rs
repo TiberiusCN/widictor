@@ -1,6 +1,8 @@
 pub use lua_array::LuaArray;
+use lua_bool::LuaBool;
 pub use lua_float::LuaFloat;
 pub use lua_integer::LuaInteger;
+use lua_null::LuaNull;
 pub use lua_string::LuaString;
 pub use lua_table::LuaTable;
 use nom::{IResult, bytes::complete::{tag, take_while1}};
@@ -12,6 +14,8 @@ mod lua_integer;
 mod lua_float;
 mod lua_table;
 mod lua_array;
+mod lua_bool;
+mod lua_null;
 use php_error::PhpError;
 
 #[macro_export]
@@ -53,6 +57,10 @@ impl<W: Write> LuaSender<W> {
 
 struct Parser;
 impl Parser {
+  fn null_val(src: &str) -> IResult<&str, (), PhpError<&str>> {
+    let (src, _) = tag("N")(src)?;
+    Ok((src, ()))
+  }
   fn close(src: &str) -> IResult<&str, (), PhpError<&str>> {
     let (src, _) = tag("}")(src)?;
     Ok((src, ()))
@@ -136,9 +144,12 @@ impl Parser {
   }
   fn any_lua(src: &str) -> IResult<&str, Box<dyn LuaType>, PhpError<&str>> {
     LuaString::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) })
+      .or_else(|_| LuaBool::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
+      .or_else(|_| LuaNull::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
       .or_else(|_| LuaInteger::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
       .or_else(|_| LuaFloat::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
-      .or_else(|_| LuaTable::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
+      .or_else(|_| LuaTable::<LuaInteger>::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
+      .or_else(|_| LuaTable::<LuaString>::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
   }
 }
 
@@ -216,4 +227,20 @@ fn test() {
   let (last, val) = LuaInteger::parse(r"i:-882;").unwrap();
   assert!(last.is_empty());
   assert_eq!(i32::from(val), -882);
+  let (last, val) = LuaBool::parse(r"b:0;").unwrap();
+  assert!(last.is_empty());
+  assert_eq!(bool::from(val), false);
+  let (last, val) = LuaBool::parse(r"b:1;").unwrap();
+  assert!(last.is_empty());
+  assert_eq!(bool::from(val), true);
+  let (last, _) = LuaNull::parse(r"N;").unwrap();
+  assert!(last.is_empty());
+  let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"a:4:{i:0;b:1;i:1;N;i:2;d:-421000000;i:3;s:6:"A to Z";}"#).unwrap();
+  assert!(last.is_empty());
+  // let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"a:2:{i:42;b:1;s:6:"A to Z";a:3:{i:0;i:1;i:1;i:2;i:2;i:3;}}"#).unwrap();
+  // assert!(last.is_empty());
+  // let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"O:8:"stdClass":2:{s:4:"John";d:3.14;s:4:"Jane";d:2.718;}"#).unwrap();
+  // assert!(last.is_empty());
 }
+//b:1;
+//N;
