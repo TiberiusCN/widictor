@@ -4,15 +4,18 @@ use nom::IResult;
 use crate::{LuaArray, LuaFloat, LuaInteger, LuaNameType, LuaString, LuaType, Parser, php_error::PhpError};
 
 #[derive(Default, Debug)]
-pub struct LuaTable<T: LuaNameType>(HashMap<T, Box<dyn LuaType>>);
+pub struct LuaTable<T: LuaNameType> {
+  value: HashMap<T, Box<dyn LuaType>>,
+  object: Option<String>,
+}
 impl<T: LuaNameType> AsMut<HashMap<T, Box<dyn LuaType>>> for LuaTable<T> {
   fn as_mut(&mut self) -> &mut HashMap<T, Box<dyn LuaType>> {
-    &mut self.0
+    &mut self.value
   }
 }
 impl<T: LuaNameType> AsRef<HashMap<T, Box<dyn LuaType>>> for LuaTable<T> {
   fn as_ref(&self) -> &HashMap<T, Box<dyn LuaType>> {
-    &self.0
+    &self.value
   }
 }
 impl<T: LuaNameType> LuaTable<T> {
@@ -38,7 +41,7 @@ impl<T: LuaNameType> LuaTable<T> {
 impl<T: LuaNameType> Display for LuaTable<T> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.write_str("{")?;
-    let mut i = self.0.iter().peekable();
+    let mut i = self.value.iter().peekable();
     while let Some((name, val)) = i.next() {
       write!(f, "[{}]={}", name, val)?;
       if i.peek().is_some() { f.write_str(",")?; }
@@ -52,19 +55,34 @@ impl<T: LuaNameType, V: LuaType> From<LuaArray<T, V>> for LuaTable<T> {
     for (a, b) in src.into_iter() {
       out.insert(a, Box::new(b));
     }
-    Self(out)
+    Self {
+      value: out,
+      object: None,
+    }
   }
 }
 impl<T: LuaNameType> LuaType for LuaTable<T> {}
 impl<T: LuaNameType> LuaTable<T> {
   pub fn into_iter(self) -> impl Iterator<Item = (T, Box<dyn LuaType>)> {
-    self.0.into_iter()
+    self.value.into_iter()
   }
   pub fn parse(src: &str) -> IResult<&str, Self, PhpError<&str>> {
-    let (src, prefix) = Parser::prefix(src)?;
-    if prefix != "a" {
-      return Err(PhpError::UnexpectedPrefix("a", prefix.to_string()).into());
-    }
+    let (mut src, prefix) = Parser::prefix(src)?;
+    let object = match prefix {
+      "a" => None,
+      "O" => {
+        let (tmp, ch_len) = Parser::usize_val(src)?;
+        let (tmp, _) = Parser::separator(tmp)?;
+        let (tmp, val) = Parser::str_val(tmp)?;
+        let (tmp, _) = Parser::finite(tmp)?;
+        if val.len() != ch_len as usize {
+          return Err(PhpError::BadLength(ch_len as _, val.len() as _).into());
+        }
+        src = tmp;
+        Some(val)
+      },
+      s => return Err(PhpError::UnexpectedPrefix("a/O", s.to_string()).into()),
+    };
     let (src, pairs) = Parser::usize_val(src)?;
     let (src, _) = Parser::separator(src)?;
     let (src, _) = Parser::open(src)?;
@@ -83,6 +101,9 @@ impl<T: LuaNameType> LuaTable<T> {
       }
     }
     let (src, _) = Parser::close(src)?;
-    Ok((src, Self(fields)))
+    Ok((src, Self {
+      value: fields,
+      object,
+    }))
   }
 }
