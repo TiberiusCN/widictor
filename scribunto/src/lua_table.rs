@@ -6,7 +6,7 @@ use crate::{LuaArray, LuaFloat, LuaInteger, LuaNameType, LuaString, LuaType, Par
 #[derive(Default, Debug)]
 pub struct LuaTable<T: LuaNameType> {
   value: HashMap<T, Box<dyn LuaType>>,
-  object: Option<String>,
+  pub object: Option<String>,
 }
 impl<T: LuaNameType> AsMut<HashMap<T, Box<dyn LuaType>>> for LuaTable<T> {
   fn as_mut(&mut self) -> &mut HashMap<T, Box<dyn LuaType>> {
@@ -74,7 +74,7 @@ impl<T: LuaNameType> LuaTable<T> {
         let (tmp, ch_len) = Parser::usize_val(src)?;
         let (tmp, _) = Parser::separator(tmp)?;
         let (tmp, val) = Parser::str_val(tmp)?;
-        let (tmp, _) = Parser::finite(tmp)?;
+        let (tmp, _) = Parser::separator(tmp)?;
         if val.len() != ch_len as usize {
           return Err(PhpError::BadLength(ch_len as _, val.len() as _).into());
         }

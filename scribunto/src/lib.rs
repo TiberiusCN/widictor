@@ -6,7 +6,7 @@ use lua_null::LuaNull;
 pub use lua_string::LuaString;
 pub use lua_table::LuaTable;
 use nom::{IResult, bytes::complete::{tag, take_while1}};
-use std::{fmt::Display, io::Write};
+use std::{any::Any, fmt::Display, io::Write};
 
 mod php_error;
 mod lua_string;
@@ -153,7 +153,7 @@ impl Parser {
   }
 }
 
-pub trait LuaType: 'static + Display + std::fmt::Debug {
+pub trait LuaType: 'static + Display + std::fmt::Debug + Any {
 }
 pub trait LuaNameType: LuaType + Eq + std::hash::Hash {
   fn try_from_string(src: LuaString) -> Result<Box<Self>, LuaString>;
@@ -235,12 +235,18 @@ fn test() {
   assert_eq!(bool::from(val), true);
   let (last, _) = LuaNull::parse(r"N;").unwrap();
   assert!(last.is_empty());
-  let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"a:4:{i:0;b:1;i:1;N;i:2;d:-421000000;i:3;s:6:"A to Z";}"#).unwrap();
+  let (last, val): (_, LuaTable<LuaInteger>) = LuaTable::parse(r#"a:4:{i:0;b:1;i:1;N;i:2;d:-421000000;i:3;s:6:"A to Z";}"#).unwrap();
   assert!(last.is_empty());
-  // let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"a:2:{i:42;b:1;s:6:"A to Z";a:3:{i:0;i:1;i:1;i:2;i:2;i:3;}}"#).unwrap();
-  // assert!(last.is_empty());
-  // let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"O:8:"stdClass":2:{s:4:"John";d:3.14;s:4:"Jane";d:2.718;}"#).unwrap();
-  // assert!(last.is_empty());
+  assert!(val.object.is_none());
+  //assert_eq!(val.as_ref().get(0).map(Into::into), Some(0));
+  let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"a:2:{i:42;b:1;s:6:"A to Z";a:3:{i:0;i:1;i:1;i:2;i:2;i:3;}}"#).unwrap();
+  assert!(last.is_empty());
+  assert!(val.object.is_none());
+  let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"O:8:"stdClass":2:{s:4:"John";d:3.14;s:4:"Jane";d:2.718;}"#).unwrap();
+  assert!(last.is_empty());
+  assert!(val.object.map(|v| String::from(v.clone())) == Some("stdClass".to_owned()));
 }
-//b:1;
-//N;
+
+// fn lua_as_x<S: Any + LuaType>(src: &dyn LuaType) -> Option<S> {
+//   src.downcast_ref::<S>()
+// }
