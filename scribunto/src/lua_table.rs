@@ -61,7 +61,11 @@ impl<T: LuaNameType, V: LuaType> From<LuaArray<T, V>> for LuaTable<T> {
     }
   }
 }
-impl<T: LuaNameType> LuaType for LuaTable<T> {}
+impl<T: LuaNameType> LuaType for LuaTable<T> {
+  fn as_any(&self) -> &dyn std::any::Any {
+    self
+  }
+}
 impl<T: LuaNameType> LuaTable<T> {
   pub fn into_iter(self) -> impl Iterator<Item = (T, Box<dyn LuaType>)> {
     self.value.into_iter()

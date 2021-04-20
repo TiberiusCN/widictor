@@ -29,5 +29,9 @@ impl Display for LuaFloat {
     }
   }
 }
-impl LuaType for LuaFloat {}
+impl LuaType for LuaFloat {
+  fn as_any(&self) -> &dyn std::any::Any {
+    self
+  }
+}
 crate::transparent_lua!(LuaFloat, f32);

@@ -28,12 +28,21 @@ impl<T: Into<String>> From<T> for LuaString {
     Self(src)
   }
 }
+impl AsRef<str> for LuaString {
+  fn as_ref(&self) -> &str {
+    self.0.as_ref()
+  }
+}
 impl Display for LuaString {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, r#""{}""#, self.0)
   }
 }
-impl LuaType for LuaString {}
+impl LuaType for LuaString {
+  fn as_any(&self) -> &dyn std::any::Any {
+    self
+  }
+}
 impl LuaNameType for LuaString {
   fn try_from_string(src: LuaString) -> Result<Box<Self>, LuaString> {
     Ok(Box::new(src))

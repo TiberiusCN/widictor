@@ -31,6 +31,11 @@ macro_rules! transparent_lua {
         s.0
       }
     }
+    impl From<&$wrap> for $raw {
+      fn from(s: &$wrap) -> Self {
+        s.0.clone()
+      }
+    }
   };
 }
 
@@ -154,6 +159,7 @@ impl Parser {
 }
 
 pub trait LuaType: 'static + Display + std::fmt::Debug + Any {
+  fn as_any(&self) -> &dyn Any;
 }
 pub trait LuaNameType: LuaType + Eq + std::hash::Hash {
   fn try_from_string(src: LuaString) -> Result<Box<Self>, LuaString>;
@@ -238,15 +244,41 @@ fn test() {
   let (last, val): (_, LuaTable<LuaInteger>) = LuaTable::parse(r#"a:4:{i:0;b:1;i:1;N;i:2;d:-421000000;i:3;s:6:"A to Z";}"#).unwrap();
   assert!(last.is_empty());
   assert!(val.object.is_none());
-  //assert_eq!(val.as_ref().get(0).map(Into::into), Some(0));
+  {
+    let field = val.as_ref().get(&0.into()).unwrap();
+    assert_eq!(bool::from(lua_as_x::<LuaBool>(field.as_ref()).unwrap()), true);
+    let field = val.as_ref().get(&1.into()).unwrap();
+    assert!(lua_as_x::<LuaNull>(field.as_ref()).is_some());
+    let field = val.as_ref().get(&2.into()).unwrap();
+    assert_eq!(f32::from(lua_as_x::<LuaFloat>(field.as_ref()).unwrap()), -421000000.0);
+    let field = val.as_ref().get(&3.into()).unwrap();
+    assert_eq!(lua_as_x::<LuaString>(field.as_ref()).unwrap().as_ref(), "A to Z");
+  }
   let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"a:2:{i:42;b:1;s:6:"A to Z";a:3:{i:0;i:1;i:1;i:2;i:2;i:3;}}"#).unwrap();
   assert!(last.is_empty());
   assert!(val.object.is_none());
+  {
+    let field = val.as_ref().get(&"42".into()).unwrap();
+    assert_eq!(bool::from(lua_as_x::<LuaBool>(field.as_ref()).unwrap()), true);
+    let field = val.as_ref().get(&"A to Z".into()).unwrap();
+    let val = lua_as_x::<LuaTable<LuaInteger>>(field.as_ref()).unwrap();
+
+    for i in 0..=2 {
+      let field = val.as_ref().get(&i.into()).unwrap();
+      assert_eq!(i32::from(lua_as_x::<LuaInteger>(field.as_ref()).unwrap()), i+1);
+    }
+  }
   let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"O:8:"stdClass":2:{s:4:"John";d:3.14;s:4:"Jane";d:2.718;}"#).unwrap();
   assert!(last.is_empty());
-  assert!(val.object.map(|v| String::from(v.clone())) == Some("stdClass".to_owned()));
+  assert!(val.object.as_ref().map(|v| String::from(v.clone())) == Some("stdClass".to_owned()));
+  {
+    let field = val.as_ref().get(&"John".into()).unwrap();
+    assert_eq!(f32::from(lua_as_x::<LuaFloat>(field.as_ref()).unwrap()), 3.14);
+    let field = val.as_ref().get(&"Jane".into()).unwrap();
+    assert_eq!(f32::from(lua_as_x::<LuaFloat>(field.as_ref()).unwrap()), 2.718);
+  }
 }
 
-// fn lua_as_x<S: Any + LuaType>(src: &dyn LuaType) -> Option<S> {
-//   src.downcast_ref::<S>()
-// }
+fn lua_as_x<S: Any + LuaType>(src: &dyn LuaType) -> Option<&S> {
+  (*src.as_any()).downcast_ref::<S>()
+}

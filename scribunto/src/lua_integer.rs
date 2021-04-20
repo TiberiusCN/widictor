@@ -21,7 +21,11 @@ impl Display for LuaInteger {
     write!(f, "{}", self.0)
   }
 }
-impl LuaType for LuaInteger {}
+impl LuaType for LuaInteger {
+  fn as_any(&self) -> &dyn std::any::Any {
+    self
+  }
+}
 crate::transparent_lua!(LuaInteger, i32);
 impl LuaNameType for LuaInteger {
   fn try_from_string(src: LuaString) -> Result<Box<Self>, LuaString> {

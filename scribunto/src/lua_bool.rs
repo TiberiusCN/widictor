@@ -21,5 +21,9 @@ impl Display for LuaBool {
     write!(f, "{}", self.0)
   }
 }
-impl LuaType for LuaBool {}
+impl LuaType for LuaBool {
+  fn as_any(&self) -> &dyn std::any::Any {
+    self
+  }
+}
 crate::transparent_lua!(LuaBool, bool);

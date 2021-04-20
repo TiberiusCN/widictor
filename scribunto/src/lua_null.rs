@@ -17,5 +17,9 @@ impl Display for LuaNull {
     f.write_str("null")
   }
 }
-impl LuaType for LuaNull {}
+impl LuaType for LuaNull {
+  fn as_any(&self) -> &dyn std::any::Any {
+    self
+  }
+}
 crate::transparent_lua!(LuaNull, ());

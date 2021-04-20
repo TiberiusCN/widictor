@@ -24,7 +24,11 @@ impl<T: LuaNameType, V: LuaType> Display for LuaArray<T, V> {
     f.write_str("}")
   }
 }
-impl<T: LuaNameType, V: LuaType> LuaType for LuaArray<T, V> {}
+impl<T: LuaNameType, V: LuaType> LuaType for LuaArray<T, V> {
+  fn as_any(&self) -> &dyn std::any::Any {
+    self
+  }
+}
 impl<T: LuaNameType, V: LuaType> LuaArray<T, V> {
   pub fn into_iter(self) -> impl Iterator<Item = (T, V)> {
     self.0.into_iter()
