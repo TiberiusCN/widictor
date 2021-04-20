@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, HashSet}, rc::Rc};
 use language::Language;
-use scribunto::ToLuaMessage;
+use scribunto::{LuaSender, ToLuaMessage};
 use text::Text;
 use word_section::WordSection;
 //use text::Text;
@@ -128,10 +128,19 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
 }
 
 fn main() {
-  let f = std::fs::OpenOptions::new().append(true).open("/tmp/q").unwrap();
-  let mut f = scribunto::LuaSender::from(f);
+  let mut proc = std::process::Command::new("lua5.1")
+    .arg("/dvl/3p/mediawiki-extensions-Scribunto/includes/engines/LuaStandalone/mw_main.lua")
+    .arg("/dvl/3p/mediawiki-extensions-Scribunto/includes/")
+    .arg("0")
+    .arg("4")
+    .stdin(std::process::Stdio::piped())
+    .stdout(std::process::Stdio::piped())
+    .spawn().unwrap();
+  let mut so: scribunto::LuaSender<_> = proc.stdin.take().unwrap().into();
+  let mut si: scribunto::LuaReceiver<_> = proc.stdout.take().unwrap().into();
   //f.encode(ToLuaMessage::RegisterLibrary { name: "mw_interface".into(), functions: Default::default() }).unwrap();
-  f.encode(ToLuaMessage::GetStatus).unwrap();
+  so.encode(ToLuaMessage::GetStatus).unwrap();
+  si.decode();
   return;
   let arg = std::env::args().nth(1).unwrap();
   scan(&arg);

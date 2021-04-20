@@ -6,7 +6,7 @@ use lua_null::LuaNull;
 pub use lua_string::LuaString;
 pub use lua_table::LuaTable;
 use nom::{IResult, bytes::complete::{tag, take_while1}};
-use std::{any::Any, fmt::Display, io::Write};
+use std::{any::Any, fmt::Display, io::{Read, Write}};
 
 mod php_error;
 mod lua_string;
@@ -57,6 +57,42 @@ impl<W: Write> LuaSender<W> {
     write!(self.writer, "{:08x}", length * 2 - 1)?;
     write!(self.writer, "{}", message)?;
     Ok(())
+  }
+}
+pub struct LuaReceiver<R: Read> {
+  reader: R,
+}
+impl<R: Read> From<R> for LuaReceiver<R> {
+  fn from(reader: R) -> Self {
+    Self {
+      reader,
+    }
+  }
+}
+impl<R: Read> LuaReceiver<R> {
+  fn hex_u32_decode(src: &[u8]) -> Result<u32, Box<dyn std::error::Error>> {
+    let raw = hex::decode(src)?;
+    assert_eq!(raw.len(), 4);
+    Ok(u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]))
+  }
+  pub fn decode(&mut self) -> Result<LuaResponse, Box<dyn std::error::Error>> {
+    let buf = &mut [0u8; 8];
+    self.reader.read_exact(buf)?;
+    let length: u32 = Self::hex_u32_decode(buf)?;
+    self.reader.read_exact(buf)?;
+    let test: u32 = Self::hex_u32_decode(buf)?;
+    assert_eq!(length * 2 - 1, test);
+    let mut buf = unsafe {
+      let length = length as usize;
+      let mut s = Vec::with_capacity(length);
+      s.set_len(length);
+      s
+    };
+    self.reader.read_exact(&mut buf)?;
+    let table = std::str::from_utf8(buf.as_slice())?;
+    let (tail, table): (&str, LuaTable<LuaString>) = LuaTable::parse(table).unwrap();
+    assert!(tail.is_empty());
+    panic!("{:?}", table);
   }
 }
 
@@ -279,6 +315,6 @@ fn test() {
   }
 }
 
-fn lua_as_x<S: Any + LuaType>(src: &dyn LuaType) -> Option<&S> {
+pub fn lua_as_x<S: Any + LuaType>(src: &dyn LuaType) -> Option<&S> {
   (*src.as_any()).downcast_ref::<S>()
 }
