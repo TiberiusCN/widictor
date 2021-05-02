@@ -14,7 +14,8 @@ impl LuaInteger {
     let (src, _) = Parser::finite(src)?;
     Ok((src, Self::from(val)))
   }
-  pub fn to_taw(self) -> i32 { self.0 }
+  pub fn to_raw(self) -> i32 { self.0 }
+  pub fn as_raw(&self) -> &i32 { &self.0 }
 }
 impl Display for LuaInteger {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

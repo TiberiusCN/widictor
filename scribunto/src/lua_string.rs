@@ -21,6 +21,7 @@ impl LuaString {
     }
   }
   pub fn to_raw(self) -> String { self.0 }
+  pub fn as_raw(&self) -> &str { self.0.as_str() }
 }
 impl<T: Into<String>> From<T> for LuaString {
   fn from(src: T) -> Self {

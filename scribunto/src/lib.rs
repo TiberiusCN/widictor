@@ -6,7 +6,7 @@ use lua_null::LuaNull;
 pub use lua_string::LuaString;
 pub use lua_table::LuaTable;
 use nom::{IResult, bytes::complete::{tag, take_while1}};
-use std::{any::Any, fmt::Display, io::{Read, Write}};
+use std::{any::Any, fmt::Display, io::{Read, Write}, process::{ChildStdin, ChildStdout}};
 
 mod php_error;
 mod lua_string;
@@ -75,7 +75,7 @@ impl<R: Read> LuaReceiver<R> {
     assert_eq!(raw.len(), 4);
     Ok(u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]))
   }
-  pub fn decode(&mut self) -> Result<LuaResponse, Box<dyn std::error::Error>> {
+  pub fn decode(&mut self) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
     let buf = &mut [0u8; 8];
     self.reader.read_exact(buf)?;
     let length: u32 = Self::hex_u32_decode(buf)?;
@@ -92,7 +92,59 @@ impl<R: Read> LuaReceiver<R> {
     let table = std::str::from_utf8(buf.as_slice())?;
     let (tail, table): (&str, LuaTable<LuaString>) = LuaTable::parse(table).unwrap();
     assert!(tail.is_empty());
-    panic!("{:?}", table);
+    let values = table.get_integer_table("value").unwrap();
+    let nvalues = table.get_integer("nvalues").unwrap();
+    let op = table.get_string("op").unwrap();
+    assert_eq!(*nvalues.as_raw(), values.len() as i32);
+    assert_eq!(op.as_raw(), "return");
+    Ok(values)
+  }
+}
+
+pub struct RGetStatus {
+  pub pid: u32,
+  // user + system in clock ticks
+  pub time: u32,
+  // virtual memory size in octets
+  pub vsize: u32,
+  // resident set size in octets
+  pub rss: u32,
+}
+
+pub struct LuaInstance<R: Read, W: Write> {
+  input: LuaReceiver<R>,
+  output: LuaSender<W>,
+}
+impl<R: Read, W: Write> LuaInstance<R, W> {
+  pub fn weld(input: LuaReceiver<R>, output: LuaSender<W>) -> Self {
+    Self { input, output }
+  }
+  pub fn get_status(&mut self) -> Result<RGetStatus, Box<dyn std::error::Error>> {
+    self.output.encode(ToLuaMessage::GetStatus)?;
+    let r = self.input.decode()?;
+    //let r = r.get_string_table(&0.into()).unwrap();
+    unimplemented!()
+    // Ok(RGetStatus {
+    //   pid: lua_as_x(r.as_ref().get("pid".into())).unwrap().to_raw() as u32,
+    //   time: (),
+    //   vsize: (),
+    //   rss: (),
+    // })
+  }
+}
+impl LuaInstance<ChildStdout, ChildStdin> {
+  pub fn new(main: &str, includes: &str, interpreter_id: usize, int_size: usize) -> Result<Self, std::io::Error> {
+    let mut proc = std::process::Command::new("lua5.1")
+      .arg(main)
+      .arg(includes)
+      .arg(format!("{}", interpreter_id).as_str())
+      .arg(format!("{}", int_size).as_str())
+      .stdin(std::process::Stdio::piped())
+      .stdout(std::process::Stdio::piped())
+      .spawn()?;
+    let input: LuaReceiver<_> = proc.stdout.take().unwrap().into();
+    let output: LuaSender<_> = proc.stdin.take().unwrap().into();
+    Ok(Self::weld(input, output))
   }
 }
 
@@ -253,9 +305,19 @@ pub enum FromLuaMessage {
   Call { id: LuaInteger, args: LuaTable<LuaString> },
 }
 
-pub enum LuaResponse {
-  Return { values: LuaTable<LuaString> },
-  Error { value: LuaString, trace: LuaTable<LuaString> },
+pub struct LuaResponse {
+  op: String,
+  values: LuaTable<LuaInteger>,
+}
+#[derive(Debug)]
+pub struct LuaFailed {
+  value: LuaString,
+  trace: LuaTable<LuaString>,
+}
+impl Display for LuaFailed {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self.value.as_raw())
+  }
 }
 
 #[test]
@@ -281,40 +343,26 @@ fn test() {
   assert!(last.is_empty());
   assert!(val.object.is_none());
   {
-    let field = val.as_ref().get(&0.into()).unwrap();
-    assert_eq!(bool::from(lua_as_x::<LuaBool>(field.as_ref()).unwrap()), true);
-    let field = val.as_ref().get(&1.into()).unwrap();
-    assert!(lua_as_x::<LuaNull>(field.as_ref()).is_some());
-    let field = val.as_ref().get(&2.into()).unwrap();
-    assert_eq!(f32::from(lua_as_x::<LuaFloat>(field.as_ref()).unwrap()), -421000000.0);
-    let field = val.as_ref().get(&3.into()).unwrap();
-    assert_eq!(lua_as_x::<LuaString>(field.as_ref()).unwrap().as_ref(), "A to Z");
+    assert_eq!(bool::from(val.get_bool(0).unwrap()), true);
+    assert!(val.get_null(1).is_some());
+    assert_eq!(f32::from(val.get_float(2).unwrap()), -421000000.0);
+    assert_eq!(val.get_string(3).unwrap().as_ref(), "A to Z");
   }
   let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"a:2:{i:42;b:1;s:6:"A to Z";a:3:{i:0;i:1;i:1;i:2;i:2;i:3;}}"#).unwrap();
   assert!(last.is_empty());
   assert!(val.object.is_none());
   {
-    let field = val.as_ref().get(&"42".into()).unwrap();
-    assert_eq!(bool::from(lua_as_x::<LuaBool>(field.as_ref()).unwrap()), true);
-    let field = val.as_ref().get(&"A to Z".into()).unwrap();
-    let val = lua_as_x::<LuaTable<LuaInteger>>(field.as_ref()).unwrap();
-
+    assert_eq!(bool::from(val.get_bool("42").unwrap()), true);
+    let val = val.get_integer_table("A to Z").unwrap();
     for i in 0..=2 {
-      let field = val.as_ref().get(&i.into()).unwrap();
-      assert_eq!(i32::from(lua_as_x::<LuaInteger>(field.as_ref()).unwrap()), i+1);
+      assert_eq!(i32::from(val.get_integer(i).unwrap()), i+1);
     }
   }
   let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"O:8:"stdClass":2:{s:4:"John";d:3.14;s:4:"Jane";d:2.718;}"#).unwrap();
   assert!(last.is_empty());
   assert!(val.object.as_ref().map(|v| String::from(v.clone())) == Some("stdClass".to_owned()));
   {
-    let field = val.as_ref().get(&"John".into()).unwrap();
-    assert_eq!(f32::from(lua_as_x::<LuaFloat>(field.as_ref()).unwrap()), 3.14);
-    let field = val.as_ref().get(&"Jane".into()).unwrap();
-    assert_eq!(f32::from(lua_as_x::<LuaFloat>(field.as_ref()).unwrap()), 2.718);
+    assert_eq!(f32::from(val.get_float("John").unwrap()), 3.14);
+    assert_eq!(f32::from(val.get_float("Jane").unwrap()), 2.718);
   }
-}
-
-pub fn lua_as_x<S: Any + LuaType>(src: &dyn LuaType) -> Option<&S> {
-  (*src.as_any()).downcast_ref::<S>()
 }

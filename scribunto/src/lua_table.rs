@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 use nom::IResult;
 
-use crate::{LuaArray, LuaFloat, LuaInteger, LuaNameType, LuaString, LuaType, Parser, php_error::PhpError};
+use crate::{LuaArray, LuaFloat, LuaInteger, LuaNameType, LuaString, LuaType, Parser, lua_bool::LuaBool, lua_null::LuaNull, php_error::PhpError};
 
 #[derive(Default, Debug)]
 pub struct LuaTable<T: LuaNameType> {
@@ -19,10 +19,19 @@ impl<T: LuaNameType> AsRef<HashMap<T, Box<dyn LuaType>>> for LuaTable<T> {
   }
 }
 impl<T: LuaNameType> LuaTable<T> {
+  pub fn len(&self) -> usize {
+    self.value.len()
+  }
   pub fn insert<PB: LuaType, A: Into<T>, B: Into<PB>>(&mut self, property: A, value: B) {
     self.as_mut().insert(property.into(), Box::new(value.into()));
   }
   pub fn insert_string<A: Into<T>, B: Into<LuaString>>(&mut self, property: A, value: B) {
+    self.insert(property.into(), value);
+  }
+  pub fn insert_bool<A: Into<T>, B: Into<LuaBool>>(&mut self, property: A, value: B) {
+    self.insert(property.into(), value);
+  }
+  pub fn insert_null<A: Into<T>, B: Into<LuaNull>>(&mut self, property: A, value: B) {
     self.insert(property.into(), value);
   }
   pub fn insert_integer<A: Into<T>, B: Into<LuaInteger>>(&mut self, property: A, value: B) {
@@ -36,6 +45,31 @@ impl<T: LuaNameType> LuaTable<T> {
   }
   pub fn insert_integer_table<A: Into<T>, B: Into<LuaTable<LuaInteger>>>(&mut self, property: A, value: B) {
     self.insert(property.into(), value);
+  }
+  pub fn get<PB: LuaType, A: Into<T>, B: LuaType>(&self, property: A) -> Option<&B> {
+    let field = self.value.get(&property.into())?;
+    lua_as_x::<B>(field.as_ref())
+  }
+  pub fn get_string<A: Into<T>>(&self, property: A) -> Option<&LuaString> {
+    self.get::<LuaString, _, _>(property)
+  }
+  pub fn get_bool<A: Into<T>>(&self, property: A) -> Option<&LuaBool> {
+    self.get::<LuaBool, _, _>(property)
+  }
+  pub fn get_null<A: Into<T>>(&self, property: A) -> Option<&LuaNull> {
+    self.get::<LuaNull, _, _>(property)
+  }
+  pub fn get_integer<A: Into<T>>(&self, property: A) -> Option<&LuaInteger> {
+    self.get::<LuaInteger, _, _>(property)
+  }
+  pub fn get_float<A: Into<T>>(&self, property: A) -> Option<&LuaFloat> {
+    self.get::<LuaFloat, _, _>(property)
+  }
+  pub fn get_string_table<A: Into<T>>(&self, property: A) -> Option<&LuaTable<LuaString>> {
+    self.get::<LuaTable<LuaString>, _, _>(property)
+  }
+  pub fn get_integer_table<A: Into<T>>(&self, property: A) -> Option<&LuaTable<LuaInteger>> {
+    self.get::<LuaTable<LuaInteger>, _, _>(property)
   }
 }
 impl<T: LuaNameType> Display for LuaTable<T> {
@@ -110,4 +144,8 @@ impl<T: LuaNameType> LuaTable<T> {
       object,
     }))
   }
+}
+
+fn lua_as_x<S: std::any::Any + LuaType>(src: &dyn LuaType) -> Option<&S> {
+  (*src.as_any()).downcast_ref::<S>()
 }

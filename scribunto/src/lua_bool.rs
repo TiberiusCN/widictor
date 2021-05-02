@@ -14,7 +14,8 @@ impl LuaBool {
     let (src, _) = Parser::finite(src)?;
     Ok((src, Self::from(val != 0)))
   }
-  pub fn to_taw(self) -> bool { self.0 }
+  pub fn to_raw(self) -> bool { self.0 }
+  pub fn as_raw(&self) -> &bool { &self.0 }
 }
 impl Display for LuaBool {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

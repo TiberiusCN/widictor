@@ -15,6 +15,7 @@ impl LuaFloat {
     Ok((src, Self::from(val)))
   }
   pub fn to_raw(self) -> f32 { self.0 }
+  pub fn as_raw(&self) -> &f32 { &self.0 }
 }
 impl Display for LuaFloat {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
