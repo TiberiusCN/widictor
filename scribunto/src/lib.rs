@@ -1,19 +1,18 @@
-pub use lua_array::LuaArray;
 use lua_bool::LuaBool;
 pub use lua_float::LuaFloat;
 pub use lua_integer::LuaInteger;
 use lua_null::LuaNull;
 pub use lua_string::LuaString;
+use lua_table::AnyLua;
 pub use lua_table::LuaTable;
 use nom::{IResult, bytes::complete::{tag, take_while1}};
-use std::{any::Any, fmt::Display, io::{Read, Write}, process::{ChildStdin, ChildStdout}};
+use std::{fmt::Display, io::{Read, Write}, process::{ChildStdin, ChildStdout}};
 
 mod php_error;
 mod lua_string;
 mod lua_integer;
 mod lua_float;
 mod lua_table;
-mod lua_array;
 mod lua_bool;
 mod lua_null;
 use php_error::PhpError;
@@ -92,12 +91,12 @@ impl<R: Read> LuaReceiver<R> {
     let table = std::str::from_utf8(buf.as_slice())?;
     let (tail, table): (&str, LuaTable<LuaString>) = LuaTable::parse(table).unwrap();
     assert!(tail.is_empty());
-    let values = table.get_integer_table("value").unwrap();
+    let values = table.get_integer_table("values").unwrap();
     let nvalues = table.get_integer("nvalues").unwrap();
     let op = table.get_string("op").unwrap();
     assert_eq!(*nvalues.as_raw(), values.len() as i32);
     assert_eq!(op.as_raw(), "return");
-    Ok(values)
+    Ok(values.clone())
   }
 }
 
@@ -107,8 +106,8 @@ pub struct RGetStatus {
   pub time: u32,
   // virtual memory size in octets
   pub vsize: u32,
-  // resident set size in octets
-  pub rss: u32,
+  // // resident set size in octets
+  // pub rss: u32,
 }
 
 pub struct LuaInstance<R: Read, W: Write> {
@@ -122,14 +121,12 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
   pub fn get_status(&mut self) -> Result<RGetStatus, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::GetStatus)?;
     let r = self.input.decode()?;
-    //let r = r.get_string_table(&0.into()).unwrap();
-    unimplemented!()
-    // Ok(RGetStatus {
-    //   pid: lua_as_x(r.as_ref().get("pid".into())).unwrap().to_raw() as u32,
-    //   time: (),
-    //   vsize: (),
-    //   rss: (),
-    // })
+    let r = r.get_string_table(1).unwrap();
+    Ok(RGetStatus {
+      pid: *r.get_integer("pid").unwrap().as_raw() as _,
+      time: *r.get_integer("time").unwrap().as_raw() as _,
+      vsize: *r.get_integer("vsize").unwrap().as_raw() as _,
+    })
   }
 }
 impl LuaInstance<ChildStdout, ChildStdin> {
@@ -235,20 +232,18 @@ impl Parser {
   fn finite(src: &str) -> IResult<&str, (), PhpError<&str>> {
     tag(";")(src).map(|(src, _)| (src, ()))
   }
-  fn any_lua(src: &str) -> IResult<&str, Box<dyn LuaType>, PhpError<&str>> {
-    LuaString::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) })
-      .or_else(|_| LuaBool::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
-      .or_else(|_| LuaNull::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
-      .or_else(|_| LuaInteger::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
-      .or_else(|_| LuaFloat::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
-      .or_else(|_| LuaTable::<LuaInteger>::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
-      .or_else(|_| LuaTable::<LuaString>::parse(src).map(|(a, b)| -> (&str, Box<dyn LuaType>) { (a, Box::new(b)) }))
+  fn any_lua(src: &str) -> IResult<&str, AnyLua, PhpError<&str>> {
+    LuaString::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) })
+      .or_else(|_| LuaBool::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) }))
+      .or_else(|_| LuaNull::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) }))
+      .or_else(|_| LuaInteger::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) }))
+      .or_else(|_| LuaFloat::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) }))
+      .or_else(|_| LuaTable::<LuaInteger>::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) }))
+      .or_else(|_| LuaTable::<LuaString>::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) }))
   }
 }
 
-pub trait LuaType: 'static + Display + std::fmt::Debug + Any {
-  fn as_any(&self) -> &dyn Any;
-}
+pub trait LuaType: 'static + Display + std::fmt::Debug + Clone {}
 pub trait LuaNameType: LuaType + Eq + std::hash::Hash {
   fn try_from_string(src: LuaString) -> Result<Box<Self>, LuaString>;
   fn try_from_integer(src: LuaInteger) -> Result<Box<Self>, LuaInteger>;
@@ -257,9 +252,9 @@ pub trait LuaNameType: LuaType + Eq + std::hash::Hash {
 pub enum ToLuaMessage {
   LoadString { text: LuaString, name: LuaString },
   Call { id: LuaInteger, args: LuaTable<LuaString> },
-  RegisterLibrary { name: LuaString, functions: LuaArray<LuaString, LuaString> },
+  RegisterLibrary { name: LuaString, functions: LuaTable<LuaString> },
   GetStatus,
-  CleanupChunks { ids: LuaArray<LuaInteger, LuaInteger> },
+  CleanupChunks { ids: LuaTable<LuaInteger> },
   Quit,
   Testquit,
 }

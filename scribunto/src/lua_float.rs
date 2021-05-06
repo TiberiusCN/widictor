@@ -2,7 +2,7 @@ use std::fmt::Display;
 use nom::IResult;
 use crate::{LuaType, Parser, php_error::PhpError};
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct LuaFloat(f32);
 impl LuaFloat {
   pub fn parse(src: &str) -> IResult<&str, Self, PhpError<&str>> {
@@ -30,9 +30,5 @@ impl Display for LuaFloat {
     }
   }
 }
-impl LuaType for LuaFloat {
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-}
+impl LuaType for LuaFloat {}
 crate::transparent_lua!(LuaFloat, f32);

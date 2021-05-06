@@ -2,7 +2,7 @@ use std::fmt::Display;
 use nom::IResult;
 use crate::{LuaType, Parser, php_error::PhpError};
 
-#[derive(PartialEq, Eq, Default, Debug)]
+#[derive(PartialEq, Eq, Default, Debug, Clone)]
 pub struct LuaBool(bool);
 impl LuaBool {
   pub fn parse(src: &str) -> IResult<&str, Self, PhpError<&str>> {
@@ -22,9 +22,5 @@ impl Display for LuaBool {
     write!(f, "{}", self.0)
   }
 }
-impl LuaType for LuaBool {
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-}
+impl LuaType for LuaBool {}
 crate::transparent_lua!(LuaBool, bool);

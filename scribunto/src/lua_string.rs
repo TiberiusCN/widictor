@@ -2,7 +2,7 @@ use std::fmt::Display;
 use nom::IResult;
 use crate::{LuaInteger, LuaNameType, LuaType, Parser, php_error::PhpError};
 
-#[derive(PartialEq, Eq, Hash, Default, Debug)]
+#[derive(PartialEq, Eq, Hash, Default, Debug, Clone)]
 pub struct LuaString(String);
 impl LuaString {
   pub fn parse(src: &str) -> IResult<&str, Self, PhpError<&str>> {
@@ -39,11 +39,7 @@ impl Display for LuaString {
     write!(f, r#""{}""#, self.0)
   }
 }
-impl LuaType for LuaString {
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-}
+impl LuaType for LuaString {}
 impl LuaNameType for LuaString {
   fn try_from_string(src: LuaString) -> Result<Box<Self>, LuaString> {
     Ok(Box::new(src))

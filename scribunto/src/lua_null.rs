@@ -2,7 +2,7 @@ use std::fmt::Display;
 use nom::IResult;
 use crate::{LuaType, Parser, php_error::PhpError};
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct LuaNull(());
 impl LuaNull {
   pub fn parse(src: &str) -> IResult<&str, Self, PhpError<&str>> {
@@ -18,9 +18,5 @@ impl Display for LuaNull {
     f.write_str("null")
   }
 }
-impl LuaType for LuaNull {
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-}
+impl LuaType for LuaNull {}
 crate::transparent_lua!(LuaNull, ());
