@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, HashSet}, rc::Rc};
 use language::Language;
-use scribunto::LuaInstance;
+use scribunto::{LuaInstance, LuaTable};
 use text::Text;
 use word_section::WordSection;
 //use text::Text;
@@ -130,11 +130,39 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
 fn main() {
   let mut machine = LuaInstance::new(
     "/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaStandalone/mw_main.lua",
-    "/usr/share/webapps/mediawiki/extensions/Scribunto/includes/",
+    "/usr/share/webapps/mediawiki/extensions/Scribunto/includes",
     0,
     4,
+    vec![
+      "/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaCommon/lualib".to_owned(),
+    ]
   ).unwrap();
-  machine.get_status().unwrap();
+  println!("{:#?}", machine.register_library("mw_interface", LuaTable::default()).unwrap());
+  println!("{:#?}", machine.get_status().unwrap());
+  println!("{:#?}", machine.load_file("mwInit_lua", "mwInit.lua").unwrap());
+  println!("{:#?}", machine.get_status().unwrap());
+  println!("{:#?}", machine.call(1, LuaTable::default()).unwrap());
+  let mut table = LuaTable::<scribunto::LuaString>::default();
+  table.insert_string("loadPackage", "mw_interface-loadPackage-2");
+  table.insert_string("loadPHPLibrary", "mw_interface-loadPHPLibrary-2");
+  table.insert_string("frameExists", "mw_interface-frameExists-2");
+  table.insert_string("newChildFrame", "mw_interface-newChildFrame-2");
+  table.insert_string("getExpandedArgument", "mw_interface-getExpandedArgument-2");
+  table.insert_string("getAllExpandedArguments", "mw_interface-getAllExpandedArguments-2");
+  table.insert_string("expandTemplate", "mw_interface-expandTemplate-2");
+  table.insert_string("callParserFunction", "mw_interface-callParserFunction-2");
+  table.insert_string("preprocess", "mw_interface-preprocess-2");
+  table.insert_string("incrementExpensiveFunctionCount", "mw_interface-incrementExpensiveFunctionCount-2");
+  table.insert_string("isSubsting", "mw_interface-isSubsting-2");
+  table.insert_string("getFrameTitle", "mw_interface-getFrameTitle-2");
+  table.insert_string("setTTL", "mw_interface-setTTL-2");
+  table.insert_string("addWarning", "mw_interface-addWarning-2");
+  println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
+  println!("{:#?}", machine.get_status().unwrap());
+  println!("{:#?}", machine.cleanup_chunks(vec![]));
+  println!("{:#?}", machine.load_file("@mw.lua", "mw.lua").unwrap());
+  println!("{:#?}", machine.get_status().unwrap());
+  println!("{:#?}", machine.call(4, LuaTable::default()).unwrap());
   //f.encode(ToLuaMessage::RegisterLibrary { name: "mw_interface".into(), functions: Default::default() }).unwrap();
   return;
   let arg = std::env::args().nth(1).unwrap();

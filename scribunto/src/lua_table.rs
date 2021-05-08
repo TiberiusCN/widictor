@@ -54,7 +54,7 @@ any!(LuaTable<LuaInteger>, AnyLua::IntegerTable, AnyLua::IntegerTable, as_intege
 
 #[derive(Default, Debug, Clone)]
 pub struct LuaTable<T: LuaNameType> {
-  value: HashMap<T, Box<AnyLua>>,
+  pub value: HashMap<T, Box<AnyLua>>,
   pub object: Option<String>,
 }
 impl<T: LuaNameType> AsMut<HashMap<T, Box<AnyLua>>> for LuaTable<T> {
@@ -143,11 +143,8 @@ impl<T: LuaNameType> LuaTable<T> {
       "O" => {
         let (tmp, ch_len) = Parser::usize_val(src)?;
         let (tmp, _) = Parser::separator(tmp)?;
-        let (tmp, val) = Parser::str_val(tmp)?;
+        let (tmp, val) = Parser::str_val(tmp, ch_len)?;
         let (tmp, _) = Parser::separator(tmp)?;
-        if val.len() != ch_len as usize {
-          return Err(PhpError::BadLength(ch_len as _, val.len() as _).into());
-        }
         src = tmp;
         Some(val)
       },

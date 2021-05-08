@@ -6,7 +6,7 @@ pub use lua_string::LuaString;
 use lua_table::AnyLua;
 pub use lua_table::LuaTable;
 use nom::{IResult, bytes::complete::{tag, take_while1}};
-use std::{fmt::Display, io::{Read, Write}, process::{ChildStdin, ChildStdout}};
+use std::{fmt::Display, io::{Read, Write}, path::PathBuf, process::{ChildStdin, ChildStdout}};
 
 mod php_error;
 mod lua_string;
@@ -89,17 +89,28 @@ impl<R: Read> LuaReceiver<R> {
     };
     self.reader.read_exact(&mut buf)?;
     let table = std::str::from_utf8(buf.as_slice())?;
-    let (tail, table): (&str, LuaTable<LuaString>) = LuaTable::parse(table).unwrap();
+    let table = table.replace("\\\\", "\\");
+    let (tail, table): (&str, LuaTable<LuaString>) = LuaTable::parse(&table).unwrap();
     assert!(tail.is_empty());
-    let values = table.get_integer_table("values").unwrap();
-    let nvalues = table.get_integer("nvalues").unwrap();
     let op = table.get_string("op").unwrap();
-    assert_eq!(*nvalues.as_raw(), values.len() as i32);
-    assert_eq!(op.as_raw(), "return");
-    Ok(values.clone())
+    match op.as_raw() {
+      "return" => {
+        let values = table.get_integer_table("values").unwrap();
+        let nvalues = table.get_integer("nvalues").unwrap();
+        assert_eq!(*nvalues.as_raw(), values.len() as i32);
+        assert_eq!(op.as_raw(), "return");
+        Ok(values.clone())
+      },
+      "error" => {
+        let err = table.get_string("value").unwrap();
+        Err(Box::new(PhpError::<&str>::Lua(err.as_raw().to_owned()).into_nom()))
+      },
+      s => Err(Box::new(PhpError::<&str>::UnknownOp(s.to_owned()).into_nom())),
+    }
   }
 }
 
+#[derive(Debug)]
 pub struct RGetStatus {
   pub pid: u32,
   // user + system in clock ticks
@@ -109,14 +120,28 @@ pub struct RGetStatus {
   // // resident set size in octets
   // pub rss: u32,
 }
+#[derive(Debug)]
+pub struct RLoadString {
+  pub id: i32,
+}
+#[derive(Debug)]
+pub struct RCallLuaFunction {
+  pub result: LuaTable<LuaInteger>,
+}
+#[derive(Debug)]
+pub struct RRegisterLibrary {}
+#[derive(Debug)]
+pub struct RCleanupChunks {}
 
 pub struct LuaInstance<R: Read, W: Write> {
   input: LuaReceiver<R>,
   output: LuaSender<W>,
+  includes: Vec<PathBuf>,
 }
 impl<R: Read, W: Write> LuaInstance<R, W> {
-  pub fn weld(input: LuaReceiver<R>, output: LuaSender<W>) -> Self {
-    Self { input, output }
+  pub fn weld(input: LuaReceiver<R>, output: LuaSender<W>, includes: Vec<String>) -> Self {
+    let includes = includes.into_iter().map(Into::into).collect();
+    Self { input, output, includes }
   }
   pub fn get_status(&mut self) -> Result<RGetStatus, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::GetStatus)?;
@@ -128,9 +153,63 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
       vsize: *r.get_integer("vsize").unwrap().as_raw() as _,
     })
   }
+  ///// untested
+  pub fn load_string(&mut self, name: &str, text: &str) -> Result<RLoadString, Box<dyn std::error::Error>> {
+    self.output.encode(ToLuaMessage::LoadString { text: text.into(), name: name.into() })?;
+    let r = self.input.decode()?;
+    Ok(RLoadString {
+      id: *r.get_integer(1).unwrap().as_raw(),
+    })
+  }
+  pub fn load_file(&mut self, name: &str, file: &str) -> Result<RLoadString, Box<dyn std::error::Error>> {
+    for p in self.includes.iter() {
+      let p = p.join(file);
+      if p.exists() {
+        let file = std::fs::read_to_string(p)?;
+        let file = file.replace("\\", "\\\\")
+          .replace("\n", "\\n")
+          .replace("\r", "\\r")
+          .replace("\"", "\\\"");
+        return self.load_string(name, &file);
+      }
+    }
+    Err(format!("file {} not found", file).into())
+  }
+  pub fn call(&mut self, id: u32, args: LuaTable<LuaString>) -> Result<RCallLuaFunction, Box<dyn std::error::Error>> {
+    self.output.encode(ToLuaMessage::Call { id: (id as i32).into(), args })?;
+    let r = self.input.decode()?;
+    Ok(RCallLuaFunction {
+      result: r,
+    })
+  }
+  pub fn register_library(&mut self, name: &str, functions: LuaTable<LuaString>) -> Result<RRegisterLibrary, Box<dyn std::error::Error>> {
+    self.output.encode(ToLuaMessage::RegisterLibrary { name: name.into(), functions })?;
+    let _ = self.input.decode()?;
+    Ok(RRegisterLibrary {})
+  }
+  pub fn cleanup_chunks(&mut self, owned: Vec<u32>) -> Result<RCleanupChunks, Box<dyn std::error::Error>> {
+    let mut ids = LuaTable {
+      value: Default::default(),
+      object: None,
+    };
+    for id in owned.into_iter() {
+      ids.insert_bool(id as i32, true);
+    }
+    self.output.encode(ToLuaMessage::CleanupChunks { ids })?;
+    let _ = self.input.decode()?;
+    Ok(RCleanupChunks {})
+  }
+  pub fn quit(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    self.output.encode(ToLuaMessage::Quit)?;
+    Ok(())
+  }
+  pub fn test_quit(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    self.output.encode(ToLuaMessage::Testquit)?;
+    Ok(())
+  }
 }
 impl LuaInstance<ChildStdout, ChildStdin> {
-  pub fn new(main: &str, includes: &str, interpreter_id: usize, int_size: usize) -> Result<Self, std::io::Error> {
+  pub fn new(main: &str, includes: &str, interpreter_id: usize, int_size: usize, paths: Vec<String>) -> Result<Self, std::io::Error> {
     let mut proc = std::process::Command::new("lua5.1")
       .arg(main)
       .arg(includes)
@@ -141,7 +220,7 @@ impl LuaInstance<ChildStdout, ChildStdin> {
       .spawn()?;
     let input: LuaReceiver<_> = proc.stdout.take().unwrap().into();
     let output: LuaSender<_> = proc.stdin.take().unwrap().into();
-    Ok(Self::weld(input, output))
+    Ok(Self::weld(input, output, paths))
   }
 }
 
@@ -188,25 +267,11 @@ impl Parser {
         Ok((src, val))
       })
   }
-  fn str_val(src: &str) -> IResult<&str, String, PhpError<&str>> {
+  fn str_val(src: &str, len: usize) -> IResult<&str, String, PhpError<&str>> {
     let (src, _) = tag("\"")(src)?;
-    let mut out = String::new();
-    let mut size = 0;
-    let mut slash = false;
-    for c in src.chars() {
-      if slash {
-        out.push(c);
-        slash = false;
-      } else {
-        match c {
-          '\\' => slash = true,
-          '"' => break,
-          c => out.push(c),
-        }
-      }
-      size += c.len_utf8();
-    }
-    let src = &src[size..];
+    if src.len() < len { return Err(PhpError::BadLength(len as _, src.len() as _).into()); }
+    let out = &src[0..len].to_owned();
+    let src = &src[len..];
     let (src, _) = tag("\"")(src)?;
     let mut val = String::new();
     let mut slash = false;

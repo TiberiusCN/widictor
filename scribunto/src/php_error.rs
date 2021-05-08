@@ -8,7 +8,14 @@ pub enum PhpError<I> {
   BadType,
   UnexpectedPrefix(&'static str, String),
   Parse(Box<dyn std::error::Error>),
+  Lua(String),
+  UnknownOp(String),
   Nom(I, ErrorKind),
+}
+impl<I> PhpError<I> {
+  pub fn into_nom(self) -> nom::Err<Self> {
+    self.into()
+  }
 }
 impl<I> From<ParseIntError> for PhpError<I> {
   fn from(src: ParseIntError) -> Self {

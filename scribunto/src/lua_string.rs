@@ -12,13 +12,9 @@ impl LuaString {
     }
     let (src, ch_len) = Parser::usize_val(src)?;
     let (src, _) = Parser::separator(src)?;
-    let (src, val) = Parser::str_val(src)?;
+    let (src, val) = Parser::str_val(src, ch_len)?;
     let (src, _) = Parser::finite(src)?;
-    if val.len() != ch_len as usize {
-      Err(PhpError::BadLength(ch_len as _, val.len() as _).into())
-    } else {
-      Ok((src, Self::from(val)))
-    }
+    Ok((src, Self::from(val)))
   }
   pub fn to_raw(self) -> String { self.0 }
   pub fn as_raw(&self) -> &str { self.0.as_str() }
