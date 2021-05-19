@@ -106,7 +106,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
     }
     Ok(out)
   })?;
-  let lang = lang.convert(|text: Vec<Text>| -> String {
+  fn convert_text(text: Vec<Text>) -> String {
     let mut out = String::new();
     for text in text {
       if !out.is_empty() { out += " "; }
@@ -118,59 +118,101 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
           }
         }
         Text::Template(template) => {
-          out += format!("{{COM}}").as_str();
+          let args: HashMap<String, String> = template.args.into_iter().map(|it| (it.0, convert_text(it.1))).collect();
+          let com = convert_text(template.com);
+          if com.starts_with("#") {
+            out += format!("{{{}|{:?}}}", com, args).as_str();
+          } else {
+            let page = remote::get(&format!("Template:{}", com)).unwrap();
+            out += &format!("${}$", page);
+          }
         }
       }
     }
     out
-  });
+  }
+    
+  let lang = lang.convert(convert_text);
   Ok(lang.subdivide())
 }
 
+pub struct Telua {
+  pub machine: LuaInstance<std::process::ChildStdout, std::process::ChildStdin>,
+}
+impl Telua {
+  pub fn new() -> Self {
+    let mut machine = LuaInstance::new(
+      "/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaStandalone/mw_main.lua",
+      "/usr/share/webapps/mediawiki/extensions/Scribunto/includes",
+      0,
+      4,
+      vec![
+        "/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaCommon/lualib".to_owned(),
+      ]
+    ).unwrap();
+    println!("{:#?}", machine.register_library("mw_interface", LuaTable::default()).unwrap());
+    println!("{:#?}", machine.get_status().unwrap());
+    let init = machine.load_file("mwInit_lua", "mwInit.lua").unwrap().id;
+    println!("{:#?}", machine.get_status().unwrap());
+    let init = machine.call(init, LuaTable::default()).unwrap().result;
+    println!("{:#?}", init);
+    let mut table = LuaTable::<scribunto::LuaString>::default();
+    table.insert_string("loadPackage", "mw_interface-loadPackage-2");
+    table.insert_string("loadPHPLibrary", "mw_interface-loadPHPLibrary-2");
+    table.insert_string("frameExists", "mw_interface-frameExists-2");
+    table.insert_string("newChildFrame", "mw_interface-newChildFrame-2");
+    table.insert_string("getExpandedArgument", "mw_interface-getExpandedArgument-2");
+    table.insert_string("getAllExpandedArguments", "mw_interface-getAllExpandedArguments-2");
+    table.insert_string("expandTemplate", "mw_interface-expandTemplate-2");
+    table.insert_string("callParserFunction", "mw_interface-callParserFunction-2");
+    table.insert_string("preprocess", "mw_interface-preprocess-2");
+    table.insert_string("incrementExpensiveFunctionCount", "mw_interface-incrementExpensiveFunctionCount-2");
+    table.insert_string("isSubsting", "mw_interface-isSubsting-2");
+    table.insert_string("getFrameTitle", "mw_interface-getFrameTitle-2");
+    table.insert_string("setTTL", "mw_interface-setTTL-2");
+    table.insert_string("addWarning", "mw_interface-addWarning-2");
+    println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
+    println!("{:#?}", machine.get_status().unwrap());
+    println!("{:#?}", machine.cleanup_chunks(init.iter().map(|(_, z)| z).copied().collect()));
+    let mw_lua = machine.load_file("@mw.lua", "mw.lua").unwrap().id;
+    println!("{:#?}", machine.get_status().unwrap());
+    println!("{:#?}", machine.call(mw_lua, LuaTable::default()).unwrap().result);
+    Self { machine }
+  }
+}
+
 fn main() {
-  let mut machine = LuaInstance::new(
-    "/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaStandalone/mw_main.lua",
-    "/usr/share/webapps/mediawiki/extensions/Scribunto/includes",
-    0,
-    4,
-    vec![
-      "/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaCommon/lualib".to_owned(),
-    ]
-  ).unwrap();
-  println!("{:#?}", machine.register_library("mw_interface", LuaTable::default()).unwrap());
-  println!("{:#?}", machine.get_status().unwrap());
-  println!("{:#?}", machine.load_file("mwInit_lua", "mwInit.lua").unwrap());
-  println!("{:#?}", machine.get_status().unwrap());
-  println!("{:#?}", machine.call(1, LuaTable::default()).unwrap());
-  let mut table = LuaTable::<scribunto::LuaString>::default();
-  table.insert_string("loadPackage", "mw_interface-loadPackage-2");
-  table.insert_string("loadPHPLibrary", "mw_interface-loadPHPLibrary-2");
-  table.insert_string("frameExists", "mw_interface-frameExists-2");
-  table.insert_string("newChildFrame", "mw_interface-newChildFrame-2");
-  table.insert_string("getExpandedArgument", "mw_interface-getExpandedArgument-2");
-  table.insert_string("getAllExpandedArguments", "mw_interface-getAllExpandedArguments-2");
-  table.insert_string("expandTemplate", "mw_interface-expandTemplate-2");
-  table.insert_string("callParserFunction", "mw_interface-callParserFunction-2");
-  table.insert_string("preprocess", "mw_interface-preprocess-2");
-  table.insert_string("incrementExpensiveFunctionCount", "mw_interface-incrementExpensiveFunctionCount-2");
-  table.insert_string("isSubsting", "mw_interface-isSubsting-2");
-  table.insert_string("getFrameTitle", "mw_interface-getFrameTitle-2");
-  table.insert_string("setTTL", "mw_interface-setTTL-2");
-  table.insert_string("addWarning", "mw_interface-addWarning-2");
-  println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
-  println!("{:#?}", machine.get_status().unwrap());
-  println!("{:#?}", machine.cleanup_chunks(vec![]));
-  println!("{:#?}", machine.load_file("@mw.lua", "mw.lua").unwrap());
-  println!("{:#?}", machine.get_status().unwrap());
-  println!("{:#?}", machine.call(4, LuaTable::default()).unwrap());
-  //f.encode(ToLuaMessage::RegisterLibrary { name: "mw_interface".into(), functions: Default::default() }).unwrap();
-  return;
   let arg = std::env::args().nth(1).unwrap();
   scan(&arg);
 }
 
+fn clean_raw(src: String) -> String {
+  let mut opened = false;
+  let mut tag = String::new();
+  let mut noinclude = false;
+  let mut out = String::new();
+  for c in src.chars() {
+    match c {
+      '<' => opened = true,
+      '>' => {
+        match tag.as_str() {
+          "noinclude" => noinclude = true,
+          "/noinclude" => noinclude = false,
+          com if com.starts_with("!--") => {},
+          _ => log::warn!("unknown tag: {}", tag),
+        }
+        tag.clear();
+        opened = false
+      },
+      s if opened => tag.push(s),
+      s if noinclude => {},
+      s => out.push(s),
+    }
+  }
+  out
+}
 fn scan(word: &str) {
-  let page = remote::get(word).unwrap();
+  let page = remote::get(word).map(|it| clean_raw(it)).unwrap();
   let mut subwords = HashSet::new();
   let words = parse_page(&page, "French", &mut subwords).unwrap();
   for (id, page) in words.into_iter().enumerate() {

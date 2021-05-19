@@ -11,7 +11,7 @@ macro_rules! any {
       }
     }
     impl AnyLua {
-      fn $asraw(&self) -> Option<&$raw> {
+      pub fn $asraw(&self) -> Option<&$raw> {
         match &self {
           $pkind(me) => Some(me),
           _ => None,

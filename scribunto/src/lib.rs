@@ -6,7 +6,7 @@ pub use lua_string::LuaString;
 use lua_table::AnyLua;
 pub use lua_table::LuaTable;
 use nom::{IResult, bytes::complete::{tag, take_while1}};
-use std::{fmt::Display, io::{Read, Write}, path::PathBuf, process::{ChildStdin, ChildStdout}};
+use std::{collections::HashMap, fmt::Display, io::{Read, Write}, path::PathBuf, process::{ChildStdin, ChildStdout}};
 
 mod php_error;
 mod lua_string;
@@ -126,7 +126,7 @@ pub struct RLoadString {
 }
 #[derive(Debug)]
 pub struct RCallLuaFunction {
-  pub result: LuaTable<LuaInteger>,
+  pub result: HashMap<String, i32>,
 }
 #[derive(Debug)]
 pub struct RRegisterLibrary {}
@@ -175,11 +175,15 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     }
     Err(format!("file {} not found", file).into())
   }
-  pub fn call(&mut self, id: u32, args: LuaTable<LuaString>) -> Result<RCallLuaFunction, Box<dyn std::error::Error>> {
-    self.output.encode(ToLuaMessage::Call { id: (id as i32).into(), args })?;
+  pub fn call(&mut self, id: i32, args: LuaTable<LuaString>) -> Result<RCallLuaFunction, Box<dyn std::error::Error>> {
+    self.output.encode(ToLuaMessage::Call { id: id.into(), args })?;
     let r = self.input.decode()?;
+    let z = r.get_string_table(1).unwrap();
+    let result = z.as_ref().iter().map(|(func, op)| {
+      (func.as_raw().to_string(), op.as_string_table().unwrap().get_integer("id").unwrap().as_raw().clone())
+    }).collect();
     Ok(RCallLuaFunction {
-      result: r,
+      result,
     })
   }
   pub fn register_library(&mut self, name: &str, functions: LuaTable<LuaString>) -> Result<RRegisterLibrary, Box<dyn std::error::Error>> {
@@ -187,7 +191,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     let _ = self.input.decode()?;
     Ok(RRegisterLibrary {})
   }
-  pub fn cleanup_chunks(&mut self, owned: Vec<u32>) -> Result<RCleanupChunks, Box<dyn std::error::Error>> {
+  pub fn cleanup_chunks(&mut self, owned: Vec<i32>) -> Result<RCleanupChunks, Box<dyn std::error::Error>> {
     let mut ids = LuaTable {
       value: Default::default(),
       object: None,
