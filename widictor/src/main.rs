@@ -106,33 +106,51 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
     }
     Ok(out)
   })?;
-  fn convert_text(text: Vec<Text>) -> String {
-    let mut out = String::new();
-    for text in text {
-      if !out.is_empty() { out += " "; }
-      match text {
-        Text::Raw(raw) => out += raw.as_str(),
-        Text::Tab(tab) => {
-          for _ in (0..).take(tab as usize) {
-            out += "»";
+  let converter = |text: Vec<Text>| -> String {
+    fn convert_text(text: Vec<Text>, subwords: &mut HashSet<String>) -> String {
+      let mut out = String::new();
+      for text in text {
+        if !out.is_empty() { out += " "; }
+        match text {
+          Text::Raw(raw) => out += raw.as_str(),
+          Text::Tab(tab) => {
+            for _ in (0..).take(tab as usize) {
+              out += "»";
+            }
           }
-        }
-        Text::Template(template) => {
-          let args: HashMap<String, String> = template.args.into_iter().map(|it| (it.0, convert_text(it.1))).collect();
-          let com = convert_text(template.com);
-          if com.starts_with("#") {
-            out += format!("{{{}|{:?}}}", com, args).as_str();
-          } else {
-            let page = remote::get(&format!("Template:{}", com)).unwrap();
-            out += &format!("${}$", page);
+          Text::Template(template) => {
+            let args: HashMap<String, String> = template.args.into_iter().map(|it| (it.0, convert_text(it.1, subwords))).collect();
+            let mut com = template.com;
+            if matches!(com[0], Text::Tab(1)) {
+              com[0] = Text::Raw("#".to_string());
+            }
+            let com = convert_text(com, subwords);
+            if com.starts_with("#") {
+              out += format!("{{{}|{:?}}}", com, args).as_str();
+            } else {
+              println!("\x1b[32mT:{}\x1b[0m", com);
+              let page = clean_raw(remote::get(&format!("Template:{}", com)).unwrap());
+              // The entity {{{2L|Left}}} instructs the template to use the named parameter 2L or the text Left if the parameter is not present in the call. 
+              let page = page.lines().fold(Vec::new(), |mut acc, it| {
+                let mut tail = it;
+                while !tail.is_empty() {
+                  let (t, v) = Text::parse(tail, subwords).unwrap();
+                  tail = t;
+                  acc.push(v);
+                }
+                acc
+              });
+              out += &convert_text(page, subwords);
+            }
           }
         }
       }
-    }
-    out
-  }
+      out
+    };
+    convert_text(text, subwords)
+  };
     
-  let lang = lang.convert(convert_text);
+  let lang = lang.convert(converter);
   Ok(lang.subdivide())
 }
 
@@ -205,11 +223,16 @@ fn clean_raw(src: String) -> String {
         opened = false
       },
       s if opened => tag.push(s),
-      s if noinclude => {},
+      _ if noinclude => {},
       s => out.push(s),
     }
   }
-  out
+  if let Some(redirect) = out.strip_prefix("#REDIRECT ") {
+    let link = redirect.trim().strip_prefix("[[").unwrap().strip_suffix("]]").unwrap();
+    clean_raw(remote::get(&link).unwrap())
+  } else {
+    out
+  }
 }
 fn scan(word: &str) {
   let page = remote::get(word).map(|it| clean_raw(it)).unwrap();

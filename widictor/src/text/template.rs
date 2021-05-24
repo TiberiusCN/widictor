@@ -7,7 +7,7 @@ use super::Text;
 #[derive(Debug, Clone)]
 pub struct Template {
   pub com: Vec<Text>,
-  pub args: HashMap<String, Vec<Text>>,
+  pub args: HashMap<String, (Option<Vec<Text>>, Vec<Text>)>,
 }
 
 enum ArgType<'a> {
@@ -68,6 +68,7 @@ impl Template {
     let mut unordered = Vec::new();
     let mut params = HashMap::with_capacity(args.len());
     for v in args {
+      println!("ARG: {}", &v);
       let (name, v) = if let Some(split) = v.find('=') {
         let out = v.split_at(split);
         (ArgType::Force(out.0), out.1)

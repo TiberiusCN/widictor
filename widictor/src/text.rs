@@ -71,7 +71,7 @@ impl Text {
     } else if let Ok((s, template)) = Template::parse(input, subs).map_err(|e| err_chain += format!("→ test template: {:?}\n", e).as_str()) {
       (s, Self::Template(template))
     } else {
-      println!("\x1b[31m«{}»\x1b[0m as raw:{:?}", input, Self::raw(input));
+      // println!("\x1b[31m«{}»\x1b[0m as raw:{:?}", input, Self::raw(input));
       let (s, raw) = Self::raw(input).map_err(|e| {
         err_chain += format!("→ test raw: {:?}\n", e).as_str();
         eprintln!("{}", err_chain);
