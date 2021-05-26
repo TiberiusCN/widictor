@@ -119,7 +119,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
             }
           }
           Text::Template(template) => {
-            let args: HashMap<String, String> = template.args.into_iter().map(|it| (it.0, convert_text(it.1, subwords))).collect();
+            let args: HashMap<String, String> = template.args.into_iter().map(|it| (it.0, convert_text(it.1.1, subwords))).collect(); // ??? TODO
             let mut com = template.com;
             if matches!(com[0], Text::Tab(1)) {
               com[0] = Text::Raw("#".to_string());
