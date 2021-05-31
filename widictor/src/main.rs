@@ -128,19 +128,28 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
             if com.starts_with("#") {
               out += format!("{{{}|{:?}}}", com, args).as_str();
             } else {
-              println!("\x1b[32mT:{}\x1b[0m", com);
-              let page = clean_raw(remote::get(&format!("Template:{}", com)).unwrap());
-              // The entity {{{2L|Left}}} instructs the template to use the named parameter 2L or the text Left if the parameter is not present in the call. 
-              let page = page.lines().fold(Vec::new(), |mut acc, it| {
-                let mut tail = it;
-                while !tail.is_empty() {
-                  let (t, v) = Text::parse(tail, subwords).unwrap();
-                  tail = t;
-                  acc.push(v);
+              match com.as_str() {
+                "PAGENAME" => out += "PAGENAME",
+                _ => {
+                  if template.is_defval {
+                    println!("\x1b[33mD: {} — {:?}", &com, &args);
+                  } else {
+                    println!("\x1b[32mT:{}\x1b[0m", com);
+                    let page = clean_raw(remote::get(&format!("Template:{}", com)).unwrap());
+                    // The entity {{{2L|Left}}} instructs the template to use the named parameter 2L or the text Left if the parameter is not present in the call. 
+                    let page = page.lines().fold(Vec::new(), |mut acc, it| {
+                      let mut tail = it;
+                      while !tail.is_empty() {
+                        let (t, v) = Text::parse(tail, subwords).unwrap();
+                        tail = t;
+                        acc.push(v);
+                      }
+                      acc
+                    });
+                    out += &convert_text(page, subwords);
+                  }
                 }
-                acc
-              });
-              out += &convert_text(page, subwords);
+              }
             }
           }
         }
