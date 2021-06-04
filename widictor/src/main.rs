@@ -126,8 +126,16 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
             }
             let com = convert_text(com, subwords);
             if com.starts_with("#") {
+              if let Some(module) = com.strip_prefix("# invoke:") {
+                let mut telua = Telua::new();
+                println!("\x1b[32mM:{}\x1b[0m", module);
+                let module = format!("/tmp/widictor/modules/{}", module);
+                telua.machine.load_file(&module, &module).unwrap();
+                out += format!("{{MODULE: {}|{:?}}}", module, args).as_str();
+              } else {
+                panic!("unknown: {}", com);
+              }
               // #invoke:etymology/templates|inherited Module:…|function
-              out += format!("{{{}|{:?}}}", com, args).as_str();
             } else {
               match com.as_str() {
                 "PAGENAME" => out += "PAGENAME",
@@ -135,7 +143,6 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                   if template.is_defval {
                     println!("\x1b[33mD: {} — {:?}", &com, &args);
                   } else {
-                    let com = com.replace("/", "_");
                     println!("\x1b[32mT:{}\x1b[0m", com);
                     let file = format!("/tmp/widictor/{}", com);
                     let source = std::fs::read_to_string(file).unwrap();
@@ -159,7 +166,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
         }
       }
       out
-    };
+    }
     convert_text(text, subwords)
   };
     
