@@ -130,8 +130,11 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                 let mut telua = Telua::new();
                 println!("\x1b[32mM:{}\x1b[0m", module);
                 let module = format!("/tmp/widictor/modules/{}", module);
-                telua.machine.load_file(&module, &module).unwrap();
                 out += format!("{{MODULE: {}|{:?}}}", module, args).as_str();
+                let module = telua.machine.load_file(&module, &module).unwrap();
+                let args = args.into_iter().map(|it| {
+                }).collect::<HashMap<_, _>>().into();
+                telua.machine.call(module.id, args).unwrap();
               } else {
                 panic!("unknown: {}", com);
               }
