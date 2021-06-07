@@ -1,7 +1,7 @@
-use lua_bool::LuaBool;
+pub use lua_bool::LuaBool;
 pub use lua_float::LuaFloat;
 pub use lua_integer::LuaInteger;
-use lua_null::LuaNull;
+pub use lua_null::LuaNull;
 pub use lua_string::LuaString;
 use lua_table::AnyLua;
 pub use lua_table::LuaTable;

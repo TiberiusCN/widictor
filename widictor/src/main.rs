@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, HashSet}, rc::Rc};
 use language::Language;
-use scribunto::{LuaInstance, LuaTable};
+use scribunto::*;
 use text::Text;
 use word_section::WordSection;
 //use text::Text;
@@ -34,6 +34,16 @@ lazy_static::lazy_static! {
     hash
   };
 }
+
+#[derive(serde::Deserialize)]
+pub enum TypeId {
+  Bool,
+  Float,
+  Integer,
+  String,
+}
+#[derive(serde::Deserialize)]
+pub struct Proto(HashMap<String, TypeId>);
 
 enum AnyParse<'a> {
   Language(Language<(), WordSection<()>>),
@@ -130,11 +140,22 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                 let mut telua = Telua::new();
                 println!("\x1b[32mM:{}\x1b[0m", module);
                 let module = format!("/tmp/widictor/modules/{}", module);
-                out += format!("{{MODULE: {}|{:?}}}", module, args).as_str();
-                let module = telua.machine.load_file(&module, &module).unwrap();
-                let args = args.into_iter().map(|it| {
-                }).collect::<HashMap<_, _>>().into();
-                telua.machine.call(module.id, args).unwrap();
+                let proto: Proto = serde_json::from_reader(std::fs::File::open(format!("{}.proto", &module)).unwrap()).unwrap();
+                let mut table = LuaTable::<LuaString>::default();
+                for arg in args {
+                  if let Some(tid) = proto.0.get(&arg.0) {
+                    match tid {
+                      TypeId::Bool => table.insert_bool(arg.0, arg.1 == "true"),
+                      TypeId::Float => table.insert_float(arg.0, arg.1.parse::<f32>().unwrap()),
+                      TypeId::Integer => table.insert_integer(arg.0, arg.1.parse::<i32>().unwrap()),
+                      TypeId::String => table.insert_string(arg.0, &arg.1),
+                    }
+                  }
+                }
+                let module = telua.machine.load_file(&module, &module).unwrap().id;
+                let module = telua.machine.call(module, table).unwrap();
+                out += format!("{{MODULE: {:?}}}", module).as_str();
+                panic!("{}", out);
               } else {
                 panic!("unknown: {}", com);
               }
@@ -197,7 +218,7 @@ impl Telua {
     println!("{:#?}", machine.get_status().unwrap());
     let init = machine.call(init, LuaTable::default()).unwrap().result;
     println!("{:#?}", init);
-    let mut table = LuaTable::<scribunto::LuaString>::default();
+    let mut table = LuaTable::<LuaString>::default();
     table.insert_string("loadPackage", "mw_interface-loadPackage-2");
     table.insert_string("loadPHPLibrary", "mw_interface-loadPHPLibrary-2");
     table.insert_string("frameExists", "mw_interface-frameExists-2");
