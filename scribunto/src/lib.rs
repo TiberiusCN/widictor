@@ -68,13 +68,17 @@ impl<R: Read> From<R> for LuaReceiver<R> {
     }
   }
 }
+enum LuaResult {
+  Ret(LuaTable<LuaInteger>),
+  Call(LuaString, LuaTable<LuaInteger>),
+}
 impl<R: Read> LuaReceiver<R> {
   fn hex_u32_decode(src: &[u8]) -> Result<u32, Box<dyn std::error::Error>> {
     let raw = hex::decode(src)?;
     assert_eq!(raw.len(), 4);
     Ok(u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]))
   }
-  pub fn decode(&mut self) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
+  pub fn decode(&mut self) -> Result<LuaResult, Box<dyn std::error::Error>> {
     let buf = &mut [0u8; 8];
     self.reader.read_exact(buf)?;
     let length: u32 = Self::hex_u32_decode(buf)?;
@@ -98,13 +102,19 @@ impl<R: Read> LuaReceiver<R> {
         let values = table.get_integer_table("values").unwrap();
         let nvalues = table.get_integer("nvalues").unwrap();
         assert_eq!(*nvalues.as_raw(), values.len() as i32);
-        assert_eq!(op.as_raw(), "return");
-        Ok(values.clone())
+        Ok(LuaResult::Ret(values.clone()))
       },
       "error" => {
         let err = table.get_string("value").unwrap();
         Err(Box::new(PhpError::<&str>::Lua(err.as_raw().to_owned()).into_nom()))
       },
+      "call" => {
+        let args = table.get_integer_table("args").unwrap();
+        let nargs = table.get_integer("nargs").unwrap();
+        let id = table.get_string("id").unwrap();
+        assert_eq!(*nargs.as_raw(), args.len() as i32);
+        Ok(LuaResult::Call(*id, args.clone()))
+      }
       s => Err(Box::new(PhpError::<&str>::UnknownOp(s.to_owned()).into_nom())),
     }
   }
@@ -137,11 +147,15 @@ pub struct LuaInstance<R: Read, W: Write> {
   input: LuaReceiver<R>,
   output: LuaSender<W>,
   includes: Vec<PathBuf>,
+  library: HashMap<LuaString, Box<dyn Fn(LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaString>>>,
 }
 impl<R: Read, W: Write> LuaInstance<R, W> {
   pub fn weld(input: LuaReceiver<R>, output: LuaSender<W>, includes: Vec<String>) -> Self {
     let includes = includes.into_iter().map(Into::into).collect();
-    Self { input, output, includes }
+    Self { input, output, includes, library: HashMap::new() }
+  }
+  pub fn insert_callback(&mut self, op: &str, lambda: Box<dyn Fn(LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaString>>) {
+    self.library.insert(op.into(), lambda);
   }
   pub fn get_status(&mut self) -> Result<RGetStatus, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::GetStatus)?;

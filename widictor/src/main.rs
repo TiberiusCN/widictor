@@ -150,6 +150,8 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                       TypeId::Integer => table.insert_integer(arg.0, arg.1.parse::<i32>().unwrap()),
                       TypeId::String => table.insert_string(arg.0, &arg.1),
                     }
+                  } else {
+                    table.insert_string(arg.0, &arg.1)
                   }
                 }
                 let module = telua.machine.load_file(&module, &module).unwrap().id;
@@ -234,6 +236,9 @@ impl Telua {
     table.insert_string("setTTL", "mw_interface-setTTL-2");
     table.insert_string("addWarning", "mw_interface-addWarning-2");
     println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
+    let mut table = LuaTable::<LuaString>::default();
+    table.insert_string("require", "mw-require");
+    println!("{:#?}", machine.register_library("vm", table).unwrap());
     println!("{:#?}", machine.get_status().unwrap());
     println!("{:#?}", machine.cleanup_chunks(init.iter().map(|(_, z)| z).copied().collect()));
     let mw_lua = machine.load_file("@mw.lua", "mw.lua").unwrap().id;
