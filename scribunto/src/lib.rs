@@ -6,7 +6,7 @@ pub use lua_string::LuaString;
 use lua_table::AnyLua;
 pub use lua_table::LuaTable;
 use nom::{IResult, bytes::complete::{tag, take_while1}};
-use std::{collections::HashMap, fmt::Display, io::{Read, Write}, path::PathBuf, process::{ChildStdin, ChildStdout}};
+use std::{collections::HashMap, fmt::Display, io::{Read, Write}, path::PathBuf, process::{ChildStdin, ChildStdout}, sync::Arc};
 
 mod php_error;
 mod lua_string;
@@ -78,7 +78,7 @@ impl<R: Read> LuaReceiver<R> {
     assert_eq!(raw.len(), 4);
     Ok(u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]))
   }
-  pub fn decode(&mut self) -> Result<LuaResult, Box<dyn std::error::Error>> {
+  fn decode(&mut self) -> Result<LuaResult, Box<dyn std::error::Error>> {
     let buf = &mut [0u8; 8];
     self.reader.read_exact(buf)?;
     let length: u32 = Self::hex_u32_decode(buf)?;
@@ -113,7 +113,7 @@ impl<R: Read> LuaReceiver<R> {
         let nargs = table.get_integer("nargs").unwrap();
         let id = table.get_string("id").unwrap();
         assert_eq!(*nargs.as_raw(), args.len() as i32);
-        Ok(LuaResult::Call(*id, args.clone()))
+        Ok(LuaResult::Call(id.clone(), args.clone()))
       }
       s => Err(Box::new(PhpError::<&str>::UnknownOp(s.to_owned()).into_nom())),
     }
@@ -147,19 +147,36 @@ pub struct LuaInstance<R: Read, W: Write> {
   input: LuaReceiver<R>,
   output: LuaSender<W>,
   includes: Vec<PathBuf>,
-  library: HashMap<LuaString, Box<dyn Fn(LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaString>>>,
+  library: HashMap<LuaString, Arc<Box<dyn Fn(&mut LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaString>>>>,
 }
 impl<R: Read, W: Write> LuaInstance<R, W> {
+  fn decode_ack(&mut self, src: LuaResult) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
+    match src {
+      LuaResult::Ret(ret) => Ok(ret),
+      LuaResult::Call(id, args) => {
+        if let Some(l) = self.library.get(&id) {
+          let l = l.clone();
+          let result = l(self, args);
+          self.output.encode(ToLuaMessage::Return { values: result })?;
+          let r = self.input.decode()?;
+          self.decode_ack(r)
+        } else {
+          Err(Box::new(PhpError::<&str>::NoSuchFunction(id.as_raw().to_owned())))
+        }
+      }
+    }
+  }
   pub fn weld(input: LuaReceiver<R>, output: LuaSender<W>, includes: Vec<String>) -> Self {
     let includes = includes.into_iter().map(Into::into).collect();
     Self { input, output, includes, library: HashMap::new() }
   }
-  pub fn insert_callback(&mut self, op: &str, lambda: Box<dyn Fn(LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaString>>) {
-    self.library.insert(op.into(), lambda);
+  pub fn insert_callback(&mut self, op: &str, lambda: Box<dyn Fn(&mut LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaString>>) {
+    self.library.insert(op.into(), Arc::new(lambda));
   }
   pub fn get_status(&mut self) -> Result<RGetStatus, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::GetStatus)?;
     let r = self.input.decode()?;
+    let r = self.decode_ack(r)?;
     let r = r.get_string_table(1).unwrap();
     Ok(RGetStatus {
       pid: *r.get_integer("pid").unwrap().as_raw() as _,
@@ -171,6 +188,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
   pub fn load_string(&mut self, name: &str, text: &str) -> Result<RLoadString, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::LoadString { text: text.into(), name: name.into() })?;
     let r = self.input.decode()?;
+    let r = self.decode_ack(r)?;
     Ok(RLoadString {
       id: *r.get_integer(1).unwrap().as_raw(),
     })
@@ -192,6 +210,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
   pub fn call(&mut self, id: i32, args: LuaTable<LuaString>) -> Result<RCallLuaFunction, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::Call { id: id.into(), args })?;
     let r = self.input.decode()?;
+    let r = self.decode_ack(r)?;
     let z = r.get_string_table(1).unwrap();
     let result = z.as_ref().iter().map(|(func, op)| {
       (func.as_raw().to_string(), op.as_string_table().unwrap().get_integer("id").unwrap().as_raw().clone())
@@ -340,6 +359,8 @@ pub enum ToLuaMessage {
   CleanupChunks { ids: LuaTable<LuaInteger> },
   Quit,
   Testquit,
+  Return { values: LuaTable<LuaString> },
+  Failure { value: LuaString },
 }
 impl From<ToLuaMessage> for LuaTable<LuaString> {
   fn from(src: ToLuaMessage) -> Self {
@@ -374,6 +395,15 @@ impl From<ToLuaMessage> for LuaTable<LuaString> {
       ToLuaMessage::Testquit => {
         t.insert_string("op", "testquit");
       }
+      ToLuaMessage::Return { values } => {
+        t.insert_string("op", "return");
+        t.insert_integer("nvalues", values.len() as i32);
+        t.insert_string_table("values", values);
+      }
+      ToLuaMessage::Failure { value } => {
+        t.insert_string("op", "error");
+        t.insert_string("value", value);
+      },
     }
     t
   }

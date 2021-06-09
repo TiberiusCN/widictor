@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 hex = "0.4"
 nom = "5.0"
+thiserror = "1.0"
