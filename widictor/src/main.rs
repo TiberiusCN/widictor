@@ -139,7 +139,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
               if let Some(module) = com.strip_prefix("# invoke:") {
                 let mut telua = Telua::new();
                 println!("\x1b[32mM:{}\x1b[0m", module);
-                let module = format!("/tmp/widictor/modules/{}", module);
+                let module = format!("/tmp/widictor/modules/{}.lua", module);
                 let proto: Proto = serde_json::from_reader(std::fs::File::open(format!("{}.proto", &module)).unwrap()).unwrap();
                 let mut table = LuaTable::<LuaString>::default();
                 for arg in args {
@@ -244,6 +244,15 @@ impl Telua {
     let mw_lua = machine.load_file("@mw.lua", "mw.lua").unwrap().id;
     println!("{:#?}", machine.get_status().unwrap());
     println!("{:#?}", machine.call(mw_lua, LuaTable::default()).unwrap().result);
+
+    machine.insert_callback("mw-require", Box::new(|instance: LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
+      let file_id = table.get_string(1).unwrap().as_raw();
+      let file = format!("/tmp/widictor/modules/{}.lua", file_id);
+      let id = instance.load_file(file_id, &file).unwrap().id;
+      let functions = instance.call(id, LuaTable::default()).unwrap().result;
+      functions.into_iter()
+    }));
+
     Self { machine }
   }
 }
