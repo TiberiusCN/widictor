@@ -245,12 +245,16 @@ impl Telua {
     println!("{:#?}", machine.get_status().unwrap());
     println!("{:#?}", machine.call(mw_lua, LuaTable::default()).unwrap().result);
 
-    machine.insert_callback("mw-require", Box::new(|instance: LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
+    machine.insert_callback("mw-require", Box::new(|instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
       let file_id = table.get_string(1).unwrap().as_raw();
-      let file = format!("/tmp/widictor/modules/{}.lua", file_id);
+      let file = format!("/tmp/widictor/modules/m{}.lua", file_id);
       let id = instance.load_file(file_id, &file).unwrap().id;
       let functions = instance.call(id, LuaTable::default()).unwrap().result;
-      functions.into_iter()
+      let mut out = LuaTable::default();
+      for (name, id) in functions {
+        out.insert_integer(name, id);
+      }
+      out
     }));
 
     Self { machine }
