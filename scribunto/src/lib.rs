@@ -152,8 +152,12 @@ pub struct LuaInstance<R: Read, W: Write> {
 impl<R: Read, W: Write> LuaInstance<R, W> {
   fn decode_ack(&mut self, src: LuaResult) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
     match src {
-      LuaResult::Ret(ret) => Ok(ret),
+      LuaResult::Ret(ret) => {
+        println!("ret");
+        Ok(ret)
+      },
       LuaResult::Call(id, args) => {
+        println!("call {}", id);
         if let Some(l) = self.library.get(&id) {
           let l = l.clone();
           let result = l(self, args);
