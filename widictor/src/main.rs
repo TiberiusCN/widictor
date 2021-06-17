@@ -215,11 +215,11 @@ impl Telua {
       ]
     ).unwrap();
     println!("{:#?}", machine.register_library("mw_interface", LuaTable::default()).unwrap());
-    println!("{:#?}", machine.get_status().unwrap());
     let init = machine.load_file("mwInit_lua", "mwInit.lua").unwrap().id;
-    println!("{:#?}", machine.get_status().unwrap());
     let init = machine.call(init, LuaTable::default()).unwrap().result;
     println!("{:#?}", init);
+    let init = machine.load_file("package", "package.lua").unwrap().id;
+    let _ = machine.call(init, LuaTable::default()).unwrap().result;
     let mut table = LuaTable::<LuaString>::default();
     table.insert_string("loadPackage", "mw_interface-loadPackage-2");
     table.insert_string("loadPHPLibrary", "mw_interface-loadPHPLibrary-2");

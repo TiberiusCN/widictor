@@ -215,13 +215,18 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     self.output.encode(ToLuaMessage::Call { id: id.into(), args })?;
     let r = self.input.decode()?;
     let r = self.decode_ack(r)?;
-    let z = r.get_string_table(1).unwrap();
-    let result = z.as_ref().iter().map(|(func, op)| {
-      (func.as_raw().to_string(), op.as_string_table().unwrap().get_integer("id").unwrap().as_raw().clone())
-    }).collect();
-    Ok(RCallLuaFunction {
-      result,
-    })
+    if let Some(z) = r.get_string_table(1) {
+      let result = z.as_ref().iter().map(|(func, op)| {
+        (func.as_raw().to_string(), op.as_string_table().unwrap().get_integer("id").unwrap().as_raw().clone())
+      }).collect();
+      Ok(RCallLuaFunction {
+        result,
+      })
+    } else {
+      Ok(RCallLuaFunction {
+        result: Default::default(),
+      })
+    }
   }
   pub fn register_library(&mut self, name: &str, functions: LuaTable<LuaString>) -> Result<RRegisterLibrary, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::RegisterLibrary { name: name.into(), functions })?;

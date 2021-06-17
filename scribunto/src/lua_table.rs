@@ -11,9 +11,9 @@ macro_rules! any {
       }
     }
     impl AnyLua {
-      pub fn $asraw(&self) -> Option<&$raw> {
+      pub fn $asraw(&self) -> Option<$raw> {
         match &self {
-          $pkind(me) => Some(me),
+          $pkind(me) => Some(me.clone()),
           _ => None,
         }
       }
@@ -49,8 +49,22 @@ any!(LuaFloat, AnyLua::Float, AnyLua::Float, as_float);
 any!(LuaNull, AnyLua::Null, AnyLua::Null, as_null);
 any!(LuaBool, AnyLua::Bool, AnyLua::Bool, as_bool);
 any!(LuaInteger, AnyLua::Integer, AnyLua::Integer, as_integer);
-any!(LuaTable<LuaString>, AnyLua::StringTable, AnyLua::StringTable, as_string_table);
 any!(LuaTable<LuaInteger>, AnyLua::IntegerTable, AnyLua::IntegerTable, as_integer_table);
+
+impl From<LuaTable<LuaString>> for AnyLua {
+  fn from(me: LuaTable<LuaString>) -> Self {
+    AnyLua::StringTable(me)
+  }
+}
+impl AnyLua {
+  pub fn as_string_table(&self) -> Option<LuaTable<LuaString>> {
+    match &self {
+      AnyLua::StringTable(me) => Some(me.clone()),
+      AnyLua::IntegerTable(me) => Some(me.into()),
+      _ => None,
+    }
+  }
+}
 
 #[derive(Default, Debug, Clone)]
 pub struct LuaTable<T: LuaNameType> {
@@ -98,25 +112,25 @@ impl<T: LuaNameType> LuaTable<T> {
   fn get<A: Into<T>>(&self, property: A) -> Option<&AnyLua> {
     self.value.get(&property.into()).map(Box::as_ref)
   }
-  pub fn get_string<A: Into<T>>(&self, property: A) -> Option<&LuaString> {
+  pub fn get_string<A: Into<T>>(&self, property: A) -> Option<LuaString> {
     self.get(property).and_then(AnyLua::as_string)
   }
-  pub fn get_bool<A: Into<T>>(&self, property: A) -> Option<&LuaBool> {
+  pub fn get_bool<A: Into<T>>(&self, property: A) -> Option<LuaBool> {
     self.get(property).and_then(AnyLua::as_bool)
   }
-  pub fn get_null<A: Into<T>>(&self, property: A) -> Option<&LuaNull> {
+  pub fn get_null<A: Into<T>>(&self, property: A) -> Option<LuaNull> {
     self.get(property).and_then(AnyLua::as_null)
   }
-  pub fn get_integer<A: Into<T>>(&self, property: A) -> Option<&LuaInteger> {
+  pub fn get_integer<A: Into<T>>(&self, property: A) -> Option<LuaInteger> {
     self.get(property).and_then(AnyLua::as_integer)
   }
-  pub fn get_float<A: Into<T>>(&self, property: A) -> Option<&LuaFloat> {
+  pub fn get_float<A: Into<T>>(&self, property: A) -> Option<LuaFloat> {
     self.get(property).and_then(AnyLua::as_float)
   }
-  pub fn get_string_table<A: Into<T>>(&self, property: A) -> Option<&LuaTable<LuaString>> {
+  pub fn get_string_table<A: Into<T>>(&self, property: A) -> Option<LuaTable<LuaString>> {
     self.get(property).and_then(AnyLua::as_string_table)
   }
-  pub fn get_integer_table<A: Into<T>>(&self, property: A) -> Option<&LuaTable<LuaInteger>> {
+  pub fn get_integer_table<A: Into<T>>(&self, property: A) -> Option<LuaTable<LuaInteger>> {
     self.get(property).and_then(AnyLua::as_integer_table)
   }
 }
@@ -172,5 +186,13 @@ impl<T: LuaNameType> LuaTable<T> {
       value: fields,
       object,
     }))
+  }
+}
+impl From<&LuaTable<LuaInteger>> for LuaTable<LuaString> {
+  fn from(src: &LuaTable<LuaInteger>) -> Self {
+    LuaTable {
+      value: src.value.iter().map(|it| (LuaString::from(format!("{}", it.0.as_raw())), it.1.clone())).collect(),
+      object: src.object.clone(),
+    }
   }
 }
