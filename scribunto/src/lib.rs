@@ -256,11 +256,13 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
 }
 impl LuaInstance<ChildStdout, ChildStdin> {
   pub fn new(main: &str, includes: &str, interpreter_id: usize, int_size: usize, paths: Vec<String>) -> Result<Self, std::io::Error> {
+    let path = paths.iter().fold("?.lua".to_owned(), |acc, it| format!("{};{}/?.lua", acc, it));
     let mut proc = std::process::Command::new("lua5.1")
       .arg(main)
       .arg(includes)
       .arg(format!("{}", interpreter_id).as_str())
       .arg(format!("{}", int_size).as_str())
+      .env("LUA_PATH", path)
       .stdin(std::process::Stdio::piped())
       .stdout(std::process::Stdio::piped())
       .spawn()?;

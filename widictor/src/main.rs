@@ -212,30 +212,31 @@ impl Telua {
       4,
       vec![
         "/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaCommon/lualib".to_owned(),
+        "/tmp/widictor/modules".to_owned(),
       ]
     ).unwrap();
     println!("{:#?}", machine.register_library("mw_interface", LuaTable::default()).unwrap());
     let init = machine.load_file("mwInit_lua", "mwInit.lua").unwrap().id;
     let init = machine.call(init, LuaTable::default()).unwrap().result;
     println!("{:#?}", init);
-    let init = machine.load_file("package", "package.lua").unwrap().id;
-    let _ = machine.call(init, LuaTable::default()).unwrap().result;
-    let mut table = LuaTable::<LuaString>::default();
-    table.insert_string("loadPackage", "mw_interface-loadPackage-2");
-    table.insert_string("loadPHPLibrary", "mw_interface-loadPHPLibrary-2");
-    table.insert_string("frameExists", "mw_interface-frameExists-2");
-    table.insert_string("newChildFrame", "mw_interface-newChildFrame-2");
-    table.insert_string("getExpandedArgument", "mw_interface-getExpandedArgument-2");
-    table.insert_string("getAllExpandedArguments", "mw_interface-getAllExpandedArguments-2");
-    table.insert_string("expandTemplate", "mw_interface-expandTemplate-2");
-    table.insert_string("callParserFunction", "mw_interface-callParserFunction-2");
-    table.insert_string("preprocess", "mw_interface-preprocess-2");
-    table.insert_string("incrementExpensiveFunctionCount", "mw_interface-incrementExpensiveFunctionCount-2");
-    table.insert_string("isSubsting", "mw_interface-isSubsting-2");
-    table.insert_string("getFrameTitle", "mw_interface-getFrameTitle-2");
-    table.insert_string("setTTL", "mw_interface-setTTL-2");
-    table.insert_string("addWarning", "mw_interface-addWarning-2");
-    println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
+    let package = machine.load_file("package", "package.lua").unwrap().id;
+    let _ = machine.call(package, LuaTable::default()).unwrap().result;
+    // let mut table = LuaTable::<LuaString>::default();
+    // table.insert_string("loadPackage", "mw_interface-loadPackage-2");
+    // table.insert_string("loadPHPLibrary", "mw_interface-loadPHPLibrary-2");
+    // table.insert_string("frameExists", "mw_interface-frameExists-2");
+    // table.insert_string("newChildFrame", "mw_interface-newChildFrame-2");
+    // table.insert_string("getExpandedArgument", "mw_interface-getExpandedArgument-2");
+    // table.insert_string("getAllExpandedArguments", "mw_interface-getAllExpandedArguments-2");
+    // table.insert_string("expandTemplate", "mw_interface-expandTemplate-2");
+    // table.insert_string("callParserFunction", "mw_interface-callParserFunction-2");
+    // table.insert_string("preprocess", "mw_interface-preprocess-2");
+    // table.insert_string("incrementExpensiveFunctionCount", "mw_interface-incrementExpensiveFunctionCount-2");
+    // table.insert_string("isSubsting", "mw_interface-isSubsting-2");
+    // table.insert_string("getFrameTitle", "mw_interface-getFrameTitle-2");
+    // table.insert_string("setTTL", "mw_interface-setTTL-2");
+    // table.insert_string("addWarning", "mw_interface-addWarning-2");
+    // println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
     // let mut table = LuaTable::<LuaString>::default();
     // table.insert_string("require", "mw-require");
     // println!("{:#?}", machine.register_library("vm", table).unwrap());
@@ -246,11 +247,10 @@ impl Telua {
     // println!("{:#?}", machine.call(mw_lua, LuaTable::default()).unwrap().result);
 
     // machine.insert_callback("mw-require", Box::new(|instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
-    //   let file_id = table.get_string(1).unwrap().as_raw();
+    //   let file_id = table.get_string(1).unwrap().as_raw().to_owned();
     //   let file = format!("/tmp/widictor/modules/{}.lua", file_id);
-    //   let id = instance.load_file(file_id, &file).unwrap().id;
+    //   let id = instance.load_file(&file_id, &file).unwrap().id;
     //   let functions = instance.call(id, LuaTable::default()).unwrap().result;
-    //   panic!("{:#?}", functions);
     //   let mut out = LuaTable::default();
     //   for (name, id) in functions {
     //     out.insert_integer(name, id);
