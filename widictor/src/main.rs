@@ -210,16 +210,13 @@ impl Telua {
       "/usr/share/webapps/mediawiki/extensions/Scribunto/includes",
       0,
       4,
-      vec![
-        "/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaCommon/lualib".to_owned(),
-        "/tmp/widictor/modules".to_owned(),
-      ]
+      vec!["/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaCommon/lualib".to_owned()],
     ).unwrap();
     println!("{:#?}", machine.register_library("mw_interface", LuaTable::default()).unwrap());
     let init = machine.load_file("mwInit_lua", "mwInit.lua").unwrap().id;
     let init = machine.call(init, LuaTable::default()).unwrap().result;
     println!("{:#?}", init);
-    let package = machine.load_file("package", "package.lua").unwrap().id;
+    let package = machine.load_string("package", include_str!("../../pkg/package.lua")).unwrap().id;
     let _ = machine.call(package, LuaTable::default()).unwrap().result;
     // let mut table = LuaTable::<LuaString>::default();
     // table.insert_string("loadPackage", "mw_interface-loadPackage-2");
@@ -237,26 +234,22 @@ impl Telua {
     // table.insert_string("setTTL", "mw_interface-setTTL-2");
     // table.insert_string("addWarning", "mw_interface-addWarning-2");
     // println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
-    // let mut table = LuaTable::<LuaString>::default();
-    // table.insert_string("require", "mw-require");
-    // println!("{:#?}", machine.register_library("vm", table).unwrap());
-    // println!("{:#?}", machine.get_status().unwrap());
-    // println!("{:#?}", machine.cleanup_chunks(init.iter().map(|(_, z)| z).copied().collect()));
-    // let mw_lua = machine.load_file("@mw.lua", "mw.lua").unwrap().id;
-    // println!("{:#?}", machine.get_status().unwrap());
-    // println!("{:#?}", machine.call(mw_lua, LuaTable::default()).unwrap().result);
+    let mut table = LuaTable::<LuaString>::default();
+    table.insert_string("require", "mw-require");
+    println!("{:#?}", machine.register_library("vm", table).unwrap());
+    println!("{:#?}", machine.get_status().unwrap());
+    println!("{:#?}", machine.cleanup_chunks(init.iter().map(|(_, z)| z).copied().collect()));
+    let mw_lua = machine.load_file("@mw.lua", "mw.lua").unwrap().id;
+    println!("{:#?}", machine.get_status().unwrap());
+    println!("{:#?}", machine.call(mw_lua, LuaTable::default()).unwrap().result);
 
-    // machine.insert_callback("mw-require", Box::new(|instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
-    //   let file_id = table.get_string(1).unwrap().as_raw().to_owned();
-    //   let file = format!("/tmp/widictor/modules/{}.lua", file_id);
-    //   let id = instance.load_file(&file_id, &file).unwrap().id;
-    //   let functions = instance.call(id, LuaTable::default()).unwrap().result;
-    //   let mut out = LuaTable::default();
-    //   for (name, id) in functions {
-    //     out.insert_integer(name, id);
-    //   }
-    //   out
-    // }));
+    machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
+      let file_id = table.get_string(1).unwrap().as_raw().to_owned();
+      let file = format!("/tmp/widictor/modules/{}.lua", file_id);
+      let mut out = LuaTable::default();
+      out.insert_string("module", file.as_str());
+      out
+    }));
 
     Self { machine }
   }

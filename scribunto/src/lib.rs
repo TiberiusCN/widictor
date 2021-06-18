@@ -371,6 +371,7 @@ pub enum ToLuaMessage {
   Quit,
   Testquit,
   Return { values: LuaTable<LuaString> },
+  ReturnInt { values: LuaTable<LuaInteger> },
   Failure { value: LuaString },
 }
 impl From<ToLuaMessage> for LuaTable<LuaString> {
@@ -410,6 +411,11 @@ impl From<ToLuaMessage> for LuaTable<LuaString> {
         t.insert_string("op", "return");
         t.insert_integer("nvalues", values.len() as i32);
         t.insert_string_table("values", values);
+      }
+      ToLuaMessage::ReturnInt { values } => {
+        t.insert_string("op", "return");
+        t.insert_integer("nvalues", values.len() as i32);
+        t.insert_integer_table("values", values);
       }
       ToLuaMessage::Failure { value } => {
         t.insert_string("op", "error");
