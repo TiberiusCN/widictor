@@ -216,8 +216,8 @@ impl Telua {
     let init = machine.load_file("mwInit_lua", "mwInit.lua").unwrap().id;
     let init = machine.call(init, LuaTable::default()).unwrap().result;
     println!("{:#?}", init);
-    let package = machine.load_string("package", include_str!("../../pkg/package.lua")).unwrap().id;
-    let _ = machine.call(package, LuaTable::default()).unwrap().result;
+    // let package = machine.load_string("package", include_str!("../../pkg/package.lua")).unwrap().id;
+    // let _ = machine.call(package, LuaTable::default()).unwrap().result;
     // let mut table = LuaTable::<LuaString>::default();
     // table.insert_string("loadPackage", "mw_interface-loadPackage-2");
     // table.insert_string("loadPHPLibrary", "mw_interface-loadPHPLibrary-2");
@@ -246,8 +246,9 @@ impl Telua {
     machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
       let file_id = table.get_string(1).unwrap().as_raw().to_owned();
       let file = format!("/tmp/widictor/modules/{}.lua", file_id);
+      println!("req: {}", file);
       let mut out = LuaTable::default();
-      out.insert_string("module", file.as_str());
+      out.insert_string(1, file.as_str());
       out
     }));
 

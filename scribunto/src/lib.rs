@@ -147,7 +147,7 @@ pub struct LuaInstance<R: Read, W: Write> {
   input: LuaReceiver<R>,
   output: LuaSender<W>,
   includes: Vec<PathBuf>,
-  library: HashMap<LuaString, Arc<Box<dyn Fn(&mut LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaString>>>>,
+  library: HashMap<LuaString, Arc<Box<dyn Fn(&mut LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaInteger>>>>,
 }
 impl<R: Read, W: Write> LuaInstance<R, W> {
   fn decode_ack(&mut self, src: LuaResult) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
@@ -161,7 +161,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
         if let Some(l) = self.library.get(&id) {
           let l = l.clone();
           let result = l(self, args);
-          self.output.encode(ToLuaMessage::Return { values: result })?;
+          self.output.encode(ToLuaMessage::ReturnInt { values: result })?;
           let r = self.input.decode()?;
           self.decode_ack(r)
         } else {
@@ -174,7 +174,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     let includes = includes.into_iter().map(Into::into).collect();
     Self { input, output, includes, library: HashMap::new() }
   }
-  pub fn insert_callback(&mut self, op: &str, lambda: Box<dyn Fn(&mut LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaString>>) {
+  pub fn insert_callback(&mut self, op: &str, lambda: Box<dyn Fn(&mut LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaInteger>>) {
     self.library.insert(op.into(), Arc::new(lambda));
   }
   pub fn get_status(&mut self) -> Result<RGetStatus, Box<dyn std::error::Error>> {
@@ -190,6 +190,10 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
   }
   ///// untested
   pub fn load_string(&mut self, name: &str, text: &str) -> Result<RLoadString, Box<dyn std::error::Error>> {
+    let text = text.replace("\\", "\\\\")
+      .replace("\n", "\\n")
+      .replace("\r", "\\r")
+      .replace("\"", "\\\"");
     self.output.encode(ToLuaMessage::LoadString { text: text.into(), name: name.into() })?;
     let r = self.input.decode()?;
     let r = self.decode_ack(r)?;
@@ -202,10 +206,6 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
       let p = p.join(file);
       if p.exists() {
         let file = std::fs::read_to_string(p)?;
-        let file = file.replace("\\", "\\\\")
-          .replace("\n", "\\n")
-          .replace("\r", "\\r")
-          .replace("\"", "\\\"");
         return self.load_string(name, &file);
       }
     }
