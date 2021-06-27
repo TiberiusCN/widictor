@@ -206,8 +206,8 @@ pub struct Telua {
 impl Telua {
   pub fn new() -> Self {
     let mut machine = LuaInstance::new(
-      "/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaStandalone/mw_main.lua",
-      "/usr/share/webapps/mediawiki/extensions/Scribunto/includes",
+      "pkg/mw_main.lua",
+      "pkg",
       0,
       4,
       vec!["/usr/share/webapps/mediawiki/extensions/Scribunto/includes/engines/LuaCommon/lualib".to_owned()],
