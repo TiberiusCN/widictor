@@ -93,7 +93,11 @@ impl<R: Read> LuaReceiver<R> {
     };
     self.reader.read_exact(&mut buf)?;
     let table = std::str::from_utf8(buf.as_slice())?;
-    let table = table.replace("\\\\", "\\");
+    let table = table
+      .replace("\\\\", "\\")
+      .replace("\\r", "\n")
+      .replace("\\\"", "\"")
+      .replace("\\n", "\r");
     let (tail, table): (&str, LuaTable<LuaString>) = LuaTable::parse(&table).unwrap();
     assert!(tail.is_empty());
     let op = table.get_string("op").unwrap();
@@ -206,6 +210,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     for p in self.includes.iter() {
       let p = p.join(file);
       if p.exists() {
+        println!("\x1b[32mFILE: {}\x1b[0m", p.display());
         let file = std::fs::read_to_string(p)?;
         return self.load_string(name, &file);
       }
