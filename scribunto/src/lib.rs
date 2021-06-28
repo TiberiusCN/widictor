@@ -136,7 +136,8 @@ pub struct RLoadString {
 }
 #[derive(Debug)]
 pub struct RCallLuaFunction {
-  pub result: HashMap<String, i32>,
+  pub functions: HashMap<String, i32>,
+  pub values: HashMap<String, AnyLua>,
 }
 #[derive(Debug)]
 pub struct RRegisterLibrary {}
@@ -216,15 +217,24 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     let r = self.input.decode()?;
     let r = self.decode_ack(r)?;
     if let Some(z) = r.get_string_table(1) {
-      let result = z.as_ref().iter().map(|(func, op)| {
-        (func.as_raw().to_string(), op.as_string_table().unwrap().get_integer("id").unwrap().as_raw().clone())
-      }).collect();
+      let mut functions = HashMap::default();
+      let mut values = HashMap::default();
+      for (id, val) in z.as_ref().iter() {
+        let id = id.as_raw().to_string();
+        if let Some(func) = val.as_string_table() {
+          functions.insert(id, *func.get_integer("id").unwrap().as_raw());
+        } else {
+          values.insert(id, *val.clone());
+        }
+      };
       Ok(RCallLuaFunction {
-        result,
+        functions,
+        values,
       })
     } else {
       Ok(RCallLuaFunction {
-        result: Default::default(),
+        functions: Default::default(),
+        values: Default::default(),
       })
     }
   }

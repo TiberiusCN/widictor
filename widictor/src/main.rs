@@ -239,7 +239,10 @@ impl Telua {
     println!("{:#?}", machine.register_library("vm", table).unwrap());
     println!("{:#?}", machine.get_status().unwrap());
     println!("{:#?}", machine.cleanup_chunks(init.iter().map(|(_, z)| z).copied().collect()));
-    let mw_lua = machine.load_file("@mw.lua", "mw.lua").unwrap().id;
+    let mw_lua = machine.load_file("mw.lua", "mw.lua").unwrap().id;
+    println!("{:#?}", machine.get_status().unwrap());
+    println!("{:#?}", machine.call(mw_lua, LuaTable::default()).unwrap().result);
+    let mw_lua = machine.load_file("mw.text.lua", "mw.text.lua").unwrap().id;
     println!("{:#?}", machine.get_status().unwrap());
     println!("{:#?}", machine.call(mw_lua, LuaTable::default()).unwrap().result);
 
