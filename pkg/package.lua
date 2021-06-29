@@ -86,30 +86,30 @@ local sentinel = function () end
 --
 -- require
 --
--- function _G.require (modname)
--- 	assert (type(modname) == "string", format (
--- 		"bad argument #1 to 'require' (string expected, got %s)", type(modname)))
--- 	local p = _LOADED[modname]
--- 	if p then -- is it there?
--- 		if p == sentinel then
--- 			error (format ("loop or previous error loading module '%s'", modname))
--- 		end
--- 		return p -- package is already loaded
--- 	end
--- 	local init = load (modname, _LOADERS)
--- 	_LOADED[modname] = sentinel
--- 	local actual_arg = _G.arg
--- 	_G.arg = { modname }
--- 	local res = init (modname)
--- 	if res then
--- 		_LOADED[modname] = res
--- 	end
--- 	_G.arg = actual_arg
--- 	if _LOADED[modname] == sentinel then
--- 		_LOADED[modname] = true
--- 	end
--- 	return _LOADED[modname]
--- end
+function _G.require (modname)
+	assert (type(modname) == "string", format (
+		"bad argument #1 to 'require' (string expected, got %s)", type(modname)))
+	local p = _LOADED[modname]
+	if p then -- is it there?
+		if p == sentinel then
+			error (format ("loop or previous error loading module '%s'", modname))
+		end
+		return p -- package is already loaded
+	end
+	local init = load (modname, _LOADERS)
+	_LOADED[modname] = sentinel
+	local actual_arg = _G.arg
+	_G.arg = { modname }
+	local res = init (modname)
+	if res then
+		_LOADED[modname] = res
+	end
+	_G.arg = actual_arg
+	if _LOADED[modname] == sentinel then
+		_LOADED[modname] = true
+	end
+	return _LOADED[modname]
+end
 
 
 --
