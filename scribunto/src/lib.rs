@@ -217,7 +217,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     }
     Err(format!("file {} not found", file).into())
   }
-  pub fn require(&mut self, name: &str, file: &str) -> Result<RLoadString, Box<dyn std::error::Error>> {
+  pub fn require(&mut self, name: &str, file: &str) -> Result<(), Box<dyn std::error::Error>> {
     let id = self.load_file(name, file)?.id;
     let data = self.call(id, Default::default())?;
     let mut module = LuaTable::<LuaString>::default();
@@ -236,9 +236,12 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
       }
     }
     let id = self.load_string(name, format!(r#"function mload(module)
-  package.loaded.{} = module
+  package.loaded['{}'] = module
+  vm.print(package)
 end
-return mload", name);
+return mload"#, name).as_str()).unwrap().id;
+    self.call(id, module).unwrap();
+    Ok(())
   }
   pub fn call(&mut self, id: i32, args: LuaTable<LuaString>) -> Result<RCallLuaFunction, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::Call { id: id.into(), args })?;
@@ -317,7 +320,7 @@ impl Parser {
     Ok((src, ()))
   }
   fn close(src: &str) -> IResult<&str, (), PhpError<&str>> {
-    let (src, _) = tag(";}")(src)?;
+    let (src, _) = tag("}")(src)?;
     Ok((src, ()))
   }
   fn open(src: &str) -> IResult<&str, (), PhpError<&str>> {

@@ -58,6 +58,7 @@ local function loader_preload (name)
 	assert (type(name) == "string", format (
 		"bad argument #1 to 'require' (string expected, got %s)", type(name)))
 	assert (type(_PRELOAD) == "table", "'package.preload' must be a table")
+  vm.print(_PRELOAD)
 	return _PRELOAD[name]
 end
 
