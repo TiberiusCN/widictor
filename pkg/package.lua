@@ -58,8 +58,17 @@ local function loader_preload (name)
 	assert (type(name) == "string", format (
 		"bad argument #1 to 'require' (string expected, got %s)", type(name)))
 	assert (type(_PRELOAD) == "table", "'package.preload' must be a table")
-  vm.print(_PRELOAD)
 	return _PRELOAD[name]
+end
+
+--
+-- load library from vm
+--
+local function loader_vm (name)
+	assert (type(name) == "string", format (
+		"bad argument #1 to 'require' (string expected, got %s)", type(name)))
+  local lib = vm.load(name)
+  return lib
 end
 
 -- create 'loaders' table
@@ -126,3 +135,15 @@ function _PACKAGE.seeall (module)
 	end
 	meta.__index = _G
 end
+
+--
+-- register table
+--
+function register_module(name, data)
+  assert (type(name) == "string", format (
+		"bad argument #1 to 'require' (string expected, got %s)", type(name)))
+	assert (type(_PRELOAD) == "table", "'package.preload' must be a table")
+  _PRELOAD[name] = data
+end
+
+return { register_module }

@@ -652,7 +652,6 @@ function MWServer:newEnvironment()
 		"rawequal",
 		"rawget",
 		"rawset",
-    "require",
 		"select",
 		"setmetatable",
 		"tonumber",
