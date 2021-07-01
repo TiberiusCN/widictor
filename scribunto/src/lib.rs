@@ -218,56 +218,36 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     Err(format!("file {} not found", file).into())
   }
   pub fn require(&mut self, name: &str, file: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let id = self.load_file(name, file)?.id;
-    let data = self.call(id, Default::default())?;
-    let mut module = LuaTable::<LuaString>::default();
-    for function in data.functions {
-      module.insert_integer(function.0, function.1);
-    }
-    for (property, variable) in data.values {
-      match variable {
-        AnyLua::String(value) => module.insert_string(property, value),
-        AnyLua::Float(value) => module.insert_float(property, value),
-        AnyLua::Null(value) => module.insert_null(property, value),
-        AnyLua::Bool(value) => module.insert_bool(property, value),
-        AnyLua::Integer(value) => module.insert_integer(property, value),
-        AnyLua::StringTable(value) => module.insert_string_table(property, value),
-        AnyLua::IntegerTable(value) => module.insert_integer_table(property, value),
-      }
-    }
-    let id = self.load_string(name, format!(r#"function mload(module)
-  package.loaded['{}'] = module
-  vm.print(package)
-end
-return mload"#, name).as_str()).unwrap().id;
-    self.call(id, module).unwrap();
-    Ok(())
+//     let id = self.load_file(name, file)?.id;
+//     let data = self.call(id, Default::default())?;
+//     let mut module = LuaTable::<LuaString>::default();
+//     for function in data.functions {
+//       module.insert_integer(function.0, function.1);
+//     }
+//     for (property, variable) in data.values {
+//       match variable {
+//         AnyLua::String(value) => module.insert_string(property, value),
+//         AnyLua::Float(value) => module.insert_float(property, value),
+//         AnyLua::Null(value) => module.insert_null(property, value),
+//         AnyLua::Bool(value) => module.insert_bool(property, value),
+//         AnyLua::Integer(value) => module.insert_integer(property, value),
+//         AnyLua::StringTable(value) => module.insert_string_table(property, value),
+//         AnyLua::IntegerTable(value) => module.insert_integer_table(property, value),
+//       }
+//     }
+//     let id = self.load_string(name, format!(r#"function mload(module)
+//   package.loaded['{}'] = module
+//   vm.print(package)
+// end
+// return mload"#, name).as_str()).unwrap().id;
+    todo!();
+    //self.call(id, module).unwrap();
+    //Ok(())
   }
-  pub fn call(&mut self, id: i32, args: LuaTable<LuaString>) -> Result<RCallLuaFunction, Box<dyn std::error::Error>> {
+  pub fn call(&mut self, id: i32, args: LuaTable<LuaInteger>) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::Call { id: id.into(), args })?;
     let r = self.input.decode()?;
-    let r = self.decode_ack(r)?;
-    if let Some(z) = r.get_string_table(1) {
-      let mut functions = HashMap::default();
-      let mut values = HashMap::default();
-      for (id, val) in z.as_ref().iter() {
-        let id = id.as_raw().to_string();
-        if let Some(func) = val.as_string_table() {
-          functions.insert(id, *func.get_integer("id").unwrap().as_raw());
-        } else {
-          values.insert(id, *val.clone());
-        }
-      };
-      Ok(RCallLuaFunction {
-        functions,
-        values,
-      })
-    } else {
-      Ok(RCallLuaFunction {
-        functions: Default::default(),
-        values: Default::default(),
-      })
-    }
+    self.decode_ack(r)
   }
   pub fn register_library(&mut self, name: &str, functions: LuaTable<LuaString>) -> Result<RRegisterLibrary, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::RegisterLibrary { name: name.into(), functions })?;
@@ -405,7 +385,7 @@ pub trait LuaNameType: LuaType + Eq + std::hash::Hash {
 
 pub enum ToLuaMessage {
   LoadString { text: LuaString, name: LuaString },
-  Call { id: LuaInteger, args: LuaTable<LuaString> },
+  Call { id: LuaInteger, args: LuaTable<LuaInteger> },
   RegisterLibrary { name: LuaString, functions: LuaTable<LuaString> },
   GetStatus,
   CleanupChunks { ids: LuaTable<LuaInteger> },
@@ -428,7 +408,7 @@ impl From<ToLuaMessage> for LuaTable<LuaString> {
         t.insert_string("op", "call");
         t.insert_integer("id", id);
         t.insert_integer("nargs", args.as_ref().len() as i32);
-        t.insert_string_table("args", args);
+        t.insert_integer_table("args", args);
       }
       ToLuaMessage::RegisterLibrary { name, functions } => {
         t.insert_string("op", "registerLibrary");

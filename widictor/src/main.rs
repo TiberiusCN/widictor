@@ -155,7 +155,8 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                   }
                 }
                 let module = telua.machine.load_file(&module, &module).unwrap().id;
-                let module = telua.machine.call(module, table).unwrap();
+                // let module = telua.machine.call(module, table).unwrap();
+                let module = todo!();
                 out += format!("{{MODULE: {:?}}}", module).as_str();
                 panic!("{}", out);
               } else {
@@ -212,6 +213,23 @@ impl Telua {
       4,
       vec!["pkg".to_owned()],
     ).unwrap();
+
+    ///////////// CALL TEST //////////
+    let id = machine.load_string("test", r#"local l = {}
+function l.sum(a, b)
+  return a + b, b - a
+end
+return l
+"#).unwrap().id;
+    let res = machine.call(id, Default::default()).unwrap();
+    let mut table = LuaTable::default();
+    table.insert_integer(1, 2);
+    table.insert_integer(2, 5);
+    let out = res.get_string_table(1).unwrap().get_function("sum").unwrap();
+    let out = machine.call(out, table).unwrap();
+    //////////////////////////////////
+    panic!("{:#?}", out);
+
     println!("{:#?}", machine.register_library("mw_interface", LuaTable::default()).unwrap());
     let init = machine.load_file("mwInit_lua", "mwInit.lua").unwrap().id;
     let init = machine.call(init, LuaTable::default()).unwrap();
@@ -280,6 +298,7 @@ impl Telua {
 }
 
 fn main() {
+  Telua::new();
   let arg = std::env::args().nth(1).unwrap();
   scan(&arg);
 }

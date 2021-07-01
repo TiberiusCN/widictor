@@ -133,6 +133,9 @@ impl<T: LuaNameType> LuaTable<T> {
   pub fn get_integer_table<A: Into<T>>(&self, property: A) -> Option<LuaTable<LuaInteger>> {
     self.get(property).and_then(AnyLua::as_integer_table)
   }
+  pub fn get_function<A: Into<T>>(&self, property: A) -> Option<i32> {
+    self.get_string_table(property).and_then(|it| it.get_integer("id")).map(|it| *it.as_raw())
+  }
 }
 impl<T: LuaNameType> Display for LuaTable<T> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
