@@ -221,7 +221,10 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     let id = self.load_file(name, file)?.id;
     let data = self.call(id, Default::default())?;
     if let Some(registrator) = registrator {
-      self.call(registrator, data.clone())?;
+      let mut args = LuaTable::default();
+      args.insert_string(1, name);
+      args.insert_string_table(2, data.get_string_table(1).unwrap());
+      self.call(registrator, args)?;
     }
     Ok(data)
   }

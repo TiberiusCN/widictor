@@ -256,16 +256,14 @@ impl Telua {
     // table.insert_string("setTTL", "mw_interface-setTTL-2");
     // table.insert_string("addWarning", "mw_interface-addWarning-2");
     // println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
-    let id = machine.load_file("@package", "package.lua").unwrap().id;
-    let _ = machine.call(id, Default::default()).unwrap();
+    let pkg_require = machine.require("package", "package.lua", None).unwrap().get_string_table(1).unwrap().get_function("register_module").unwrap();
     [
+      ("libraryUtil", None),
+      ("ustring", Some("ustring/ustring")),
       ("mw", None),
-      //("package", None),
       ("mw.site", None),
       ("mw.uri", None),
-      ("libraryUtil", None),
       ("mw.ustring", None),
-      ("ustring", Some("ustring")),
       ("mw.language", None),
       ("mw.message", None),
       ("mw.title", None),
@@ -273,8 +271,9 @@ impl Telua {
       ("mw.html", None),
       ("mw.hash", None)
     ].iter().for_each(|it| {
-      let lib = format!("{}.lua", it.0);
-      let _ = machine.require(lib.as_str(), &it.1.map(|it| format!("{}/{}", it, lib)).unwrap_or(lib.clone())).unwrap();
+      let lib = it.1.unwrap_or_else(|| it.0.clone());
+      let lib = format!("{}.lua", lib);
+      let _ = machine.require(it.0, &lib, Some(pkg_require)).unwrap();
     });
 
     Self { machine }

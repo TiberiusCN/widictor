@@ -99,6 +99,7 @@ local sentinel = function () end
 function _G.require (modname)
 	assert (type(modname) == "string", format (
 		"bad argument #1 to 'require' (string expected, got %s)", type(modname)))
+                                                                                                                     error(format("required: %s, loaded: %s", modname, tostring(_LOADED)))
 	local p = _LOADED[modname]
 	if p then -- is it there?
 		if p == sentinel then
@@ -136,14 +137,15 @@ function _PACKAGE.seeall (module)
 	meta.__index = _G
 end
 
+local out = {}
+
 --
 -- register table
 --
-function register_module(name, data)
+function out.register_module(name, data)
   assert (type(name) == "string", format (
 		"bad argument #1 to 'require' (string expected, got %s)", type(name)))
-	assert (type(_PRELOAD) == "table", "'package.preload' must be a table")
-  _PRELOAD[name] = data
+  _LOADED[name] = data
 end
 
-return { register_module }
+return out
