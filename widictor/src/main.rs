@@ -228,7 +228,7 @@ impl Telua {
     machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
       let file_id = table.get_string(1).unwrap().as_raw().to_owned();
       let file = format!("/tmp/widictor/modules/{}.lua", file_id);
-      println!("req: {}", file);
+      println!("req: \x1b[31m{}\x1b[0m", file);
       let mut out = LuaTable::default();
       out.insert_string(1, file.as_str());
       out

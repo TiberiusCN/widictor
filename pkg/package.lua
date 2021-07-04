@@ -99,7 +99,6 @@ local sentinel = function () end
 function _G.require (modname)
 	assert (type(modname) == "string", format (
 		"bad argument #1 to 'require' (string expected, got %s)", type(modname)))
-                                                                                                                     error(format("required: %s, loaded: %s", modname, tostring(_LOADED)))
 	local p = _LOADED[modname]
 	if p then -- is it there?
 		if p == sentinel then
@@ -107,6 +106,14 @@ function _G.require (modname)
 		end
 		return p -- package is already loaded
 	end
+
+   local q = format("required: %s, found: ", modname)
+    for i,z in pairs(_LOADED) do
+      q = q .. tostring(i)
+      q = q .. "; "
+    end
+    error(q)
+
 	local init = load (modname, _LOADERS)
 	_LOADED[modname] = sentinel
 	local actual_arg = _G.arg
