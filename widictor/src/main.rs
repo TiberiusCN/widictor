@@ -227,8 +227,17 @@ impl Telua {
     // println!("{:#?}", machine.cleanup_chunks(init.iter().map(|(_, z)| z).copied().collect()));
     machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
       let file_id = table.get_string(1).unwrap().as_raw().to_owned();
-      let file = format!("/tmp/widictor/modules/{}.lua", file_id);
+      let file = if file_id.starts_with("Module:") {
+        format!("/tmp/widictor/modules/{}.lua", file_id)
+      } else {
+        format!("pkg/{}.lua", file_id)
+      };
       println!("req: \x1b[31m{}\x1b[0m", file);
+      let file = std::fs::read_to_string(file).unwrap();
+      let file = file.replace("\\", "\\\\")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\"", "\\\"");
       let mut out = LuaTable::default();
       out.insert_string(1, file.as_str());
       out
@@ -258,8 +267,6 @@ impl Telua {
     // println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
     let pkg_require = machine.require("package", "package.lua", None).unwrap().get_string_table(1).unwrap().get_function("register_module").unwrap();
     [
-      ("libraryUtil", None),
-      ("ustring", Some("ustring/ustring")),
       ("mw", None),
       ("mw.site", None),
       ("mw.uri", None),

@@ -67,12 +67,12 @@ end
 local function loader_vm (name)
 	assert (type(name) == "string", format (
 		"bad argument #1 to 'require' (string expected, got %s)", type(name)))
-  local lib = vm.load(name)
+  local lib = vm.require(name)
   return lib
 end
 
 -- create 'loaders' table
-package.loaders = package.loaders or { loader_preload }
+package.loaders = package.loaders or { loader_preload, loader_vm }
 local _LOADERS = package.loaders
 
 --
@@ -107,12 +107,12 @@ function _G.require (modname)
 		return p -- package is already loaded
 	end
 
-   local q = format("required: %s, found: ", modname)
-    for i,z in pairs(_LOADED) do
-      q = q .. tostring(i)
-      q = q .. "; "
-    end
-    error(q)
+   -- local q = format("required: %s, found: ", modname)
+   --  for i,z in pairs(_LOADED) do
+   --    q = q .. tostring(i)
+   --    q = q .. "; "
+   --  end
+   --  error(q)
 
 	local init = load (modname, _LOADERS)
 	_LOADED[modname] = sentinel
