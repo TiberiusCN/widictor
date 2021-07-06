@@ -193,8 +193,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
       vsize: *r.get_integer("vsize").unwrap().as_raw() as _,
     })
   }
-  ///// untested
-  pub fn load_string(&mut self, name: &str, text: &str) -> Result<RLoadString, Box<dyn std::error::Error>> {
+  pub fn load_string(&mut self, name: &str, text: &str) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
     let text = text.replace("\\", "\\\\")
       .replace("\n", "\\n")
       .replace("\r", "\\r")
@@ -202,11 +201,12 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     self.output.encode(ToLuaMessage::LoadString { text: text.into(), name: name.into() })?;
     let r = self.input.decode()?;
     let r = self.decode_ack(r)?;
-    Ok(RLoadString {
-      id: *r.get_integer(1).unwrap().as_raw(),
-    })
+    Ok(r)
+    // Ok(RLoadString {
+    //   id: *r.get_integer(1).unwrap().as_raw(),
+    // })
   }
-  pub fn load_file(&mut self, name: &str, file: &str) -> Result<RLoadString, Box<dyn std::error::Error>> {
+  pub fn load_file(&mut self, name: &str, file: &str) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
     for p in self.includes.iter() {
       let p = p.join(file);
       if p.exists() {
@@ -218,7 +218,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     Err(format!("file {} not found", file).into())
   }
   pub fn require(&mut self, name: &str, file: &str, registrator: Option<i32>) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
-    let id = self.load_file(name, file)?.id;
+    let id = *self.load_file(name, file)?.get_integer(1).unwrap().as_raw();
     let data = self.call(id, Default::default())?;
     if let Some(registrator) = registrator {
       let mut args = LuaTable::default();
