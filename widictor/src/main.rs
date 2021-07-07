@@ -154,9 +154,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                     table.insert_string(arg.0, &arg.1)
                   }
                 }
-                //let module = telua.machine.load_file(&module, &module).unwrap().id;
-                // let module = telua.machine.call(module, table).unwrap();
-                let module = todo!();
+                let module = telua.machine.require(&module, &module, None).unwrap();
                 out += format!("{{MODULE: {:?}}}", module).as_str();
                 panic!("{}", out);
               } else {
@@ -225,26 +223,36 @@ impl Telua {
     println!("{:#?}", machine.register_library("vm", table).unwrap());
     // println!("{:#?}", machine.get_status().unwrap());
     // println!("{:#?}", machine.cleanup_chunks(init.iter().map(|(_, z)| z).copied().collect()));
-    machine.insert_callback("mw-require", Box::new(|instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
+    machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
       let file_id = table.get_string(1).unwrap().as_raw().to_owned();
-      let file = if file_id.starts_with("Module:") {
+      let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
         format!("/tmp/widictor/modules/{}.lua", file_id)
       } else {
+        let file_id = match file_id.as_str() {
+          "libraryUtil" => "libraryUtil",
+          "ustring" => "ustring/ustring",
+          "mw.site" => "mw.site",
+          "mw.uri" => "mw.uri",
+          "mw.ustring" => "mw.ustring",
+          "mw.language" => "mw.language",
+          "mw.message" => "mw.message",
+          "mw.title" => "mw.title",
+          "mw.text" => "mw.text",
+          "mw.html" => "mw.html",
+          "mw.hash" => "mw.hash",
+          e => panic!("unknown file: {}", e),
+        };
         format!("pkg/{}.lua", file_id)
       };
       println!("req: \x1b[31m{}\x1b[0m", file);
       let file = std::fs::read_to_string(file).unwrap();
-      let id = instance.load_string(&file_id, &file).unwrap();
-      panic!("{:#?}", id);
-      // let file = file.replace("\\", "\\\\")
-      //   .replace("\n", "\\n")
-      //   .replace("\r", "\\r")
-      //   .replace("\"", "\\\"");
-      // let mut out = LuaTable::default();
-      // out.insert_string(1, file.as_str());
-      // out.insert_integer(1, id);
-      // out
-      id
+       let file = file.replace("\\", "\\\\")
+         .replace("\n", "\\n")
+         .replace("\r", "\\r")
+         .replace("\"", "\\\"");
+       let mut out = LuaTable::default();
+       out.insert_string(1, file.as_str());
+       out
     }));
     machine.insert_callback("mw-print", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
       println!("{:#?}", table);
@@ -269,33 +277,22 @@ impl Telua {
     // table.insert_string("setTTL", "mw_interface-setTTL-2");
     // table.insert_string("addWarning", "mw_interface-addWarning-2");
     // println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
-    let pkg_require = machine.require("package", "package.lua", None).unwrap();
-    //.get_string_table(1).unwrap().get_function("register_module").unwrap();
-    panic!("{:#?}", pkg_require);
-    // [
-    //   ("mw", None),
-    //   ("mw.site", None),
-    //   ("mw.uri", None),
-    //   ("mw.ustring", None),
-    //   ("mw.language", None),
-    //   ("mw.message", None),
-    //   ("mw.title", None),
-    //   ("mw.text", None),
-    //   ("mw.html", None),
-    //   ("mw.hash", None)
-    // ].iter().for_each(|it| {
-    //   let lib = it.1.unwrap_or_else(|| it.0.clone());
-    //   let lib = format!("{}.lua", lib);
-    //   let _ = machine.require(it.0, &lib, Some(pkg_require)).unwrap();
-    // });
+    let pkg_require = machine.require("package", "package.lua", None).unwrap().get_string_table(1).unwrap().get_function("register_module").unwrap();
+    [
+      ("ustring", Some("ustring/ustring")),
+      ("libraryUtil", None),
+      ("mw", None),
+    ].iter().for_each(|it| {
+      let lib = it.1.unwrap_or_else(|| it.0.clone());
+      let lib = format!("{}.lua", lib);
+      let _ = machine.require(it.0, &lib, Some(pkg_require)).unwrap();
+    });
 
     Self { machine }
   }
 }
 
 fn main() {
-  Telua::new();
-  panic!("done");
   let arg = std::env::args().nth(1).unwrap();
   scan(&arg);
 }

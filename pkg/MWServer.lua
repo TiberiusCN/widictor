@@ -646,6 +646,7 @@ function MWServer:newEnvironment()
 		"error",
 		"getmetatable",
 		"ipairs",
+    "loadstring",
 		"next",
 		"pairs",
 		"pcall",

@@ -67,7 +67,7 @@ end
 local function loader_vm (name)
 	assert (type(name) == "string", format (
 		"bad argument #1 to 'require' (string expected, got %s)", type(name)))
-  local lib = vm.require(name)
+  local lib = loadstring(vm.require(name))
   return lib
 end
 
