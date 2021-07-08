@@ -217,15 +217,14 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     }
     Err(format!("file {} not found", file).into())
   }
-  pub fn require(&mut self, name: &str, file: &str, registrator: Option<i32>) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
+  pub fn call_string(&mut self, name: &str, src: &str) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
+    let id = *self.load_string(name, src)?.get_integer(1).unwrap().as_raw();
+    let data = self.call(id, Default::default())?;
+    Ok(data)
+  }
+  pub fn call_file(&mut self, name: &str, file: &str) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
     let id = *self.load_file(name, file)?.get_integer(1).unwrap().as_raw();
     let data = self.call(id, Default::default())?;
-    if let Some(registrator) = registrator {
-      let mut args = LuaTable::default();
-      args.insert_string(1, name);
-      args.insert_string_table(2, data.get_string_table(1).unwrap());
-      self.call(registrator, args)?;
-    }
     Ok(data)
   }
   pub fn call(&mut self, id: i32, args: LuaTable<LuaInteger>) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {

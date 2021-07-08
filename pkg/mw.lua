@@ -782,14 +782,4 @@ function mw.loadData( module )
 	return dataWrapper( data )
 end
 
-mw.site = require("mw.site")
-mw.uri = require("mw.uri")
-mw.ustring = require("mw.ustring")
-mw.language = require("mw.language")
-mw.message = require("mw.message")
-mw.title = require("mw.title")
-mw.text = require("mw.text")
-mw.html = require("mw.html")
-mw.hash = require("mw.hash")
-
 return mw

@@ -154,7 +154,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                     table.insert_string(arg.0, &arg.1)
                   }
                 }
-                let module = telua.machine.require(&module, &module, None).unwrap();
+                let module = telua.machine.call_file(&module, &module).unwrap();
                 out += format!("{{MODULE: {:?}}}", module).as_str();
                 panic!("{}", out);
               } else {
@@ -212,17 +212,11 @@ impl Telua {
       vec!["pkg".to_owned()],
     ).unwrap();
 
-    println!("{:#?}", machine.register_library("mw_interface", LuaTable::default()).unwrap());
-    let init = *machine.load_file("mwInit_lua", "mwInit.lua").unwrap().get_integer(1).unwrap().as_raw();
-    let init = machine.call(init, LuaTable::default()).unwrap();
-    println!("{:#?}", init);
+    machine.call_file("mwInit_lua", "mwInit.lua").unwrap();
 
     let mut table = LuaTable::<LuaString>::default();
     table.insert_string("require", "mw-require");
-    table.insert_string("print", "mw-print");
     println!("{:#?}", machine.register_library("vm", table).unwrap());
-    // println!("{:#?}", machine.get_status().unwrap());
-    // println!("{:#?}", machine.cleanup_chunks(init.iter().map(|(_, z)| z).copied().collect()));
     machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
       let file_id = table.get_string(1).unwrap().as_raw().to_owned();
       let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
@@ -231,6 +225,7 @@ impl Telua {
         let file_id = match file_id.as_str() {
           "libraryUtil" => "libraryUtil",
           "ustring" => "ustring/ustring",
+          "mw" => "mw",
           "mw.site" => "mw.site",
           "mw.uri" => "mw.uri",
           "mw.ustring" => "mw.ustring",
@@ -254,39 +249,26 @@ impl Telua {
        out.insert_string(1, file.as_str());
        out
     }));
-    machine.insert_callback("mw-print", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
-      println!("{:#?}", table);
-      Default::default()
-    }));
 
-    // let package = machine.load_string("package", include_str!("../../pkg/package.lua")).unwrap().id;
-    // let _ = machine.call(package, LuaTable::default()).unwrap().result;
-    // let mut table = LuaTable::<LuaString>::default();
-    // table.insert_string("loadPackage", "mw_interface-loadPackage-2");
-    // table.insert_string("loadPHPLibrary", "mw_interface-loadPHPLibrary-2");
-    // table.insert_string("frameExists", "mw_interface-frameExists-2");
-    // table.insert_string("newChildFrame", "mw_interface-newChildFrame-2");
-    // table.insert_string("getExpandedArgument", "mw_interface-getExpandedArgument-2");
-    // table.insert_string("getAllExpandedArguments", "mw_interface-getAllExpandedArguments-2");
-    // table.insert_string("expandTemplate", "mw_interface-expandTemplate-2");
-    // table.insert_string("callParserFunction", "mw_interface-callParserFunction-2");
-    // table.insert_string("preprocess", "mw_interface-preprocess-2");
-    // table.insert_string("incrementExpensiveFunctionCount", "mw_interface-incrementExpensiveFunctionCount-2");
-    // table.insert_string("isSubsting", "mw_interface-isSubsting-2");
-    // table.insert_string("getFrameTitle", "mw_interface-getFrameTitle-2");
-    // table.insert_string("setTTL", "mw_interface-setTTL-2");
-    // table.insert_string("addWarning", "mw_interface-addWarning-2");
-    // println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
-    let pkg_require = machine.require("package", "package.lua", None).unwrap().get_string_table(1).unwrap().get_function("register_module").unwrap();
-    [
-      ("ustring", Some("ustring/ustring")),
-      ("libraryUtil", None),
-      ("mw", None),
-    ].iter().for_each(|it| {
-      let lib = it.1.unwrap_or_else(|| it.0.clone());
-      let lib = format!("{}.lua", lib);
-      let _ = machine.require(it.0, &lib, Some(pkg_require)).unwrap();
-    });
+    machine.call_file("mw", "mw.lua").unwrap();
+    machine.call_file("package", "package.lua").unwrap();
+    for m in [
+      // "libraryUtil",
+      // "ustring",
+
+      // "mw.site",
+      // "mw.uri",
+      "mw.ustring",
+      "mw.language",
+      "mw.message",
+      "mw.title",
+      "mw.text",
+      "mw.html",
+      "mw.hash",
+    ] {
+      let setup = machine.call_file(m, &format!("{}.lua", m)).unwrap().get_string_table(1).unwrap().get_function("setupInterface").unwrap();
+      machine.call(setup, Default::default()).unwrap();
+    }
 
     Self { machine }
   }
