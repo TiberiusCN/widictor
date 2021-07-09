@@ -252,22 +252,59 @@ impl Telua {
 
     machine.call_file("mw", "mw.lua").unwrap();
     machine.call_file("package", "package.lua").unwrap();
-    for m in [
-      // "libraryUtil",
-      // "ustring",
-
-      // "mw.site",
-      // "mw.uri",
-      "mw.ustring",
-      "mw.language",
-      "mw.message",
-      "mw.title",
-      "mw.text",
-      "mw.html",
-      "mw.hash",
-    ] {
-      let setup = machine.call_file(m, &format!("{}.lua", m)).unwrap().get_string_table(1).unwrap().get_function("setupInterface").unwrap();
-      machine.call(setup, Default::default()).unwrap();
+    let z: &[(&str, &dyn Fn(&mut LuaTable<LuaString>))] = &[
+      ("mw.site", &|args| {
+        [
+          ("siteName", "widictor"),
+          ("server", "http://localhost"),
+          ("scriptPath", ""),
+          ("stylePath", ""),
+          ("current_version", env!("CARGO_PKG_VERSION")),
+        ].iter().for_each(|it| args.insert_string(it.0, it.1));
+        args.insert_integer_table("namespaces", LuaTable::default());
+      }),
+      ("mw.uri", &|_| {}),
+      ("mw.ustring", &|args| {
+        args.insert_integer("stringLengthLimit", 2097152);
+        args.insert_integer("patternLengthLimit", 10000);
+      }),
+      ("mw.language", &|_| {}),
+      ("mw.message", &|args| {
+        args.insert_string("lang", "la");
+      }),
+      ("mw.title", &|args| {
+        let mut this_title = LuaTable::default();
+        this_title.insert_bool("isCurrentTitle", true);
+        this_title.insert_bool("isLocal", true);
+        this_title.insert_string("interwiki", "");
+        this_title.insert_integer("namespace", 0);
+        this_title.insert_string("nsText", "");
+        this_title.insert_string("text", "Sample");
+        this_title.insert_string("fragment", "");
+        this_title.insert_string("thePartialUrl", "Sample");
+        this_title.insert_bool("file", false);
+        args.insert_string_table("thisTitle", this_title);
+        args.insert_integer("NS_MEDIA", -2);
+      }),
+      ("mw.text", &|args| {
+        args.insert_string_table("nowiki_protocols", LuaTable::default());
+        args.insert_string("comma", ",");
+        args.insert_string("and", " et ");
+        args.insert_string("ellipsis", "...");
+      }),
+      ("mw.html", &|args| {
+        args.insert_string("uniqPrefix", "^?'\"`UNIQ-");
+        args.insert_string("uniqSuffix", "-QINU`\"'^?");
+      }),
+      ("mw.hash", &|_| {}),
+    ];
+    for it in z {
+      let setup = machine.call_file(it.0, &format!("{}.lua", it.0)).unwrap().get_string_table(1).unwrap().get_function("setupInterface").unwrap();
+      let mut table = LuaTable::default();
+      it.1(&mut table);
+      let mut args = LuaTable::default();
+      args.insert_string_table(1, table);
+      machine.call(setup, args).unwrap();
     }
 
     Self { machine }
