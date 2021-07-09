@@ -215,6 +215,25 @@ impl Telua {
     machine.call_file("mwInit_lua", "mwInit.lua").unwrap();
 
     let mut table = LuaTable::<LuaString>::default();
+    //table.insert_string("", "mw-require");
+    println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
+
+    // loadPackage="mw_interface-loadPackage-2",  
+    // loadPHPLibrary="mw_interface-loadPHPLibrary-2",  
+    // frameExists="mw_interface-frameExists-2",  
+    // newChildFrame="mw_interface-newChildFrame-2",  
+    // getExpandedArgument="mw_interface-getExpandedArgument-2",  
+    // getAllExpandedArguments="mw_interface-getAllExpandedArguments-2",  
+    // expandTemplate="mw_interface-expandTemplate-2",  
+    // callParserFunction="mw_interface-callParserFunction-2",  
+    // preprocess="mw_interface-preprocess-2",  
+    // incrementExpensiveFunctionCount="mw_interface-incrementExpensiveFunctionCount-2",  
+    // isSubsting="mw_interface-isSubsting-2",  
+    // getFrameTitle="mw_interface-getFrameTitle-2",  
+    // setTTL="mw_interface-setTTL-2",  
+    // addWarning="mw_interface-addWarning-2"
+
+    let mut table = LuaTable::<LuaString>::default();
     table.insert_string("require", "mw-require");
     println!("{:#?}", machine.register_library("vm", table).unwrap());
     machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
@@ -250,9 +269,11 @@ impl Telua {
        out
     }));
 
-    machine.call_file("mw", "mw.lua").unwrap();
-    machine.call_file("package", "package.lua").unwrap();
     let z: &[(&str, &dyn Fn(&mut LuaTable<LuaString>))] = &[
+      ("mw", &|args| {
+        args.insert_bool("allowEnvFuncs", false);
+      }),
+      ("package", &|_| {}),
       ("mw.site", &|args| {
         [
           ("siteName", "widictor"),
@@ -299,12 +320,13 @@ impl Telua {
       ("mw.hash", &|_| {}),
     ];
     for it in z {
-      let setup = machine.call_file(it.0, &format!("{}.lua", it.0)).unwrap().get_string_table(1).unwrap().get_function("setupInterface").unwrap();
-      let mut table = LuaTable::default();
-      it.1(&mut table);
-      let mut args = LuaTable::default();
-      args.insert_string_table(1, table);
-      machine.call(setup, args).unwrap();
+      if let Some(setup) = machine.call_file(it.0, &format!("{}.lua", it.0)).unwrap().get_string_table(1).unwrap().get_function("setupInterface") {
+        let mut table = LuaTable::default();
+        it.1(&mut table);
+        let mut args = LuaTable::default();
+        args.insert_string_table(1, table);
+        machine.call(setup, args).unwrap();
+      }
     }
 
     Self { machine }

@@ -143,16 +143,3 @@ function _PACKAGE.seeall (module)
 	end
 	meta.__index = _G
 end
-
-local out = {}
-
---
--- register table
---
-function out.register_module(name, data)
-  assert (type(name) == "string", format (
-		"bad argument #1 to 'require' (string expected, got %s)", type(name)))
-  _LOADED[name] = data
-end
-
-return out
