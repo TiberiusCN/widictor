@@ -216,9 +216,33 @@ impl Telua {
 
     let mut table = LuaTable::<LuaString>::default();
     //table.insert_string("", "mw-require");
+    table.insert_string("loadPackage", "loadPackage");
+    machine.insert_callback("loadPackage", Box::new(|instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
+      let file_id = table.get_string(1).unwrap().as_raw().to_owned();
+      let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
+        //format!("/tmp/widictor/modules/{}.lua", file_id)
+        format!("{}.lua", file_id)
+      } else {
+        let file_id = match file_id.as_str() {
+          "ustring" => "ustring/ustring",
+          u => u,
+        };
+        //format!("pkg/{}.lua", file_id)
+        format!("{}.lua", file_id)
+      };
+      println!("req: \x1b[31m{}\x1b[0m", file);
+      // let file = std::fs::read_to_string(file).unwrap();
+      // let file = file.replace("\\", "\\\\")
+      //   .replace("\n", "\\n")
+      //   .replace("\r", "\\r")
+      //   .replace("\"", "\\\"");
+      let id = *instance.load_file(&file_id, &file).unwrap().get_integer(1).unwrap().as_raw();
+      let mut out = LuaTable::default();
+      out.insert_integer(1, id);
+      out
+    }));
     println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
 
-    // loadPackage="mw_interface-loadPackage-2",  
     // loadPHPLibrary="mw_interface-loadPHPLibrary-2",  
     // frameExists="mw_interface-frameExists-2",  
     // newChildFrame="mw_interface-newChildFrame-2",  
@@ -273,7 +297,6 @@ impl Telua {
       ("mw", &|args| {
         args.insert_bool("allowEnvFuncs", false);
       }),
-      ("package", &|_| {}),
       ("mw.site", &|args| {
         [
           ("siteName", "widictor"),
