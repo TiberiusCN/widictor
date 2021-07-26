@@ -75,18 +75,6 @@ function mw.setupInterface( options )
 
 	-- Store the interface table
 	--
-	-- mw_interface.loadPackage() returns function values with their environment
-	-- set to the base environment, which would violate module isolation if they
-	-- were run from a cloned environment. We can only allow access to
-	-- mw_interface.loadPackage via our environment-setting wrapper.
-	--
-	php = mw_interface
-	mw_interface = nil
-
-	packageModuleFunc = php.loadPackage( 'package' )
-	makePackageModule( _G )
-	package.loaded.mw = mw
-	packageCache = {}
 end
 
 --- Create a table like the one os.date() returns, but with a metatable that sets TTLs as the values are looked at.

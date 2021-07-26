@@ -96,14 +96,6 @@ function _G.require (modname)
 		end
 		return p -- package is already loaded
 	end
-
-   -- local q = format("required: %s, found: ", modname)
-   --  for i,z in pairs(_LOADED) do
-   --    q = q .. tostring(i)
-   --    q = q .. "; "
-   --  end
-   --  error(q)
-
 	local init = load (modname, _LOADERS)
 	_LOADED[modname] = sentinel
 	local actual_arg = _G.arg
