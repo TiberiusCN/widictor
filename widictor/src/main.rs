@@ -306,6 +306,19 @@ impl Telua {
           ("current_version", env!("CARGO_PKG_VERSION")),
         ].iter().for_each(|it| args.insert_string(it.0, it.1));
         args.insert_integer_table("namespaces", LuaTable::default());
+        let stats = [
+          ("pages", 1),
+          ("articles", 0),
+          ("files", 0),
+          ("edits", 0),
+          ("users", 1),
+          ("activeUsers", 1),
+          ("admins", 1),
+        ].iter().fold(LuaTable::default(), |mut acc, it| {
+          acc.insert_integer(it.0, it.1);
+          acc
+        });
+        args.insert_string_table("stats", stats);
       }),
       ("mw.uri", &|_| {}),
       ("mw.ustring", &|args| {
