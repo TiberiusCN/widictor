@@ -294,6 +294,7 @@ impl Telua {
     }));
 
     let z: &[(&str, &dyn Fn(&mut LuaTable<LuaString>))] = &[
+      ("package", &|_| {}),
       ("mw", &|args| {
         args.insert_bool("allowEnvFuncs", false);
       }),
@@ -356,7 +357,7 @@ impl Telua {
       ("mw.hash", &|_| {}),
     ];
     for it in z {
-      if let Some(setup) = machine.call_file(it.0, &format!("{}.lua", it.0)).unwrap().get_string_table(1).unwrap().get_function("setupInterface") {
+      if let Some(setup) = machine.call_file(it.0, &format!("{}.lua", it.0)).unwrap().get_string_table(1).and_then(|it| it.get_function("setupInterface")) {
         let mut table = LuaTable::default();
         it.1(&mut table);
         let mut args = LuaTable::default();
