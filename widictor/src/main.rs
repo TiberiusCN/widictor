@@ -241,6 +241,24 @@ impl Telua {
       out.insert_integer(1, id);
       out
     }));
+    // fakes
+    [
+      ("loadPHPLibrary", "mw_interface-loadPHPLibrary-2"),
+      ("frameExists", "mw_interface-frameExists-2"),
+      ("newChildFrame", "mw_interface-newChildFrame-2"),
+      ("getExpandedArgument", "mw_interface-getExpandedArgument-2"),
+      ("getAllExpandedArguments", "mw_interface-getAllExpandedArguments-2"),
+      ("expandTemplate", "mw_interface-expandTemplate-2"),
+      ("callParserFunction", "mw_interface-callParserFunction-2"),
+      ("preprocess", "mw_interface-preprocess-2"),
+      ("incrementExpensiveFunctionCount", "mw_interface-incrementExpensiveFunctionCount-2"),
+      ("isSubsting", "mw_interface-isSubsting-2"),
+      ("getFrameTitle", "mw_interface-getFrameTitle-2"),
+      ("setTTL", "mw_interface-setTTL-2"),
+      ("addWarning", "mw_interface-addWarning-2"),
+      ].iter().for_each(|it| table.insert_string(it.0, it.1));
+
+    //
     println!("{:#?}", machine.register_library("mw_interface", table).unwrap());
 
     // loadPHPLibrary="mw_interface-loadPHPLibrary-2",  
