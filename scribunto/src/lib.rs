@@ -229,6 +229,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     Ok(data)
   }
   pub fn call(&mut self, id: i32, args: LuaTable<LuaInteger>) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
+    println!("call({})", id);
     self.output.encode(ToLuaMessage::Call { id: id.into(), args })?;
     let r = self.input.decode()?;
     self.decode_ack(r)

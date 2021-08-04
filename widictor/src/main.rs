@@ -236,7 +236,8 @@ impl Telua {
       //   .replace("\n", "\\n")
       //   .replace("\r", "\\r")
       //   .replace("\"", "\\\"");
-      let id = *instance.load_file(&file_id, &file).unwrap().get_integer(1).unwrap().as_raw();
+      let chunk = instance.load_file(&file_id, &file).unwrap();
+      let id = *chunk.get_integer(1).unwrap().as_raw(); // it must refer to chunk[id] instead of passing id
       let mut out = LuaTable::default();
       out.insert_integer(1, id);
       out
@@ -312,7 +313,6 @@ impl Telua {
     }));
 
     let z: &[(&str, &dyn Fn(&mut LuaTable<LuaString>))] = &[
-      ("package", &|_| {}),
       ("mw", &|args| {
         args.insert_bool("allowEnvFuncs", false);
       }),
