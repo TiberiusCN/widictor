@@ -204,14 +204,17 @@ pub struct Telua {
 }
 impl Telua {
   pub fn new() -> Self {
-    let mut machine = LuaInstance::new(
+    let machine = LuaInstance::new(
       "pkg/mw_main.lua",
       "pkg",
       0,
       4,
-      vec!["pkg".to_owned()],
+      vec![
+        "pkg".to_owned(),
+        "pkg/ustring".to_owned(),
+      ],
     ).unwrap();
-    let machine = Self { machine };
+    let mut machine = Self { machine };
 
     machine.machine.call_file("mwInit_lua", "mwInit.lua").unwrap();
 
@@ -244,7 +247,7 @@ impl Telua {
     }));
     // fakes
     [
-      ("loadPHPLibrary", "mw_interface-loadPHPLibrary-2"),
+      ("loadPHPLibrary", "load_widictor_library"),
       ("frameExists", "mw_interface-frameExists-2"),
       ("newChildFrame", "mw_interface-newChildFrame-2"),
       ("getExpandedArgument", "mw_interface-getExpandedArgument-2"),
@@ -257,7 +260,19 @@ impl Telua {
       ("getFrameTitle", "mw_interface-getFrameTitle-2"),
       ("setTTL", "mw_interface-setTTL-2"),
       ("addWarning", "mw_interface-addWarning-2"),
-      ].iter().for_each(|it| table.insert_string(it.0, it.1));
+    ].iter().for_each(|it| table.insert_string(it.0, it.1));
+    machine.machine.insert_callback("load_widictor_library", Box::new(|machine, args| {
+      let file_id = args.get_string(1).unwrap().as_raw().to_owned();
+      // let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
+      //   format!("/tmp/widictor/modules/{}", file_id)
+      // } else {
+      //   file_id
+      // };
+      let file = file_id;
+      println!("req: \x1b[31m{}\x1b[0m", file);
+      let api = machine.call_file(&file, &format!("{}.lua", file)).unwrap();
+      api
+    }));
 
     //
     println!("mw_interface: {:#?}", machine.machine.register_library("mw_interface", table).unwrap());
@@ -266,6 +281,7 @@ impl Telua {
     table.insert_string("require", "mw-require");
     println!("{:#?}", machine.machine.register_library("vm", table).unwrap());
     machine.machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
+      panic!("ohm");
       let file_id = table.get_string(1).unwrap().as_raw().to_owned();
       let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
         format!("/tmp/widictor/modules/{}.lua", file_id)
@@ -298,7 +314,7 @@ impl Telua {
        out
     }));
 
-    let setup_interface = |machine: Telua, name, arg| {
+    let setup_interface = |machine: &mut Telua, name, arg| -> Result<(), Box<dyn std::error::Error>> {
       let setup = machine.machine.call_file(name, &format!("{}.lua", name))?.get_string_table(1).and_then(|it| it.get_function("setupInterface")).unwrap();
       let mut args = LuaTable::default();
       args.insert_string_table(1, arg);
@@ -306,7 +322,7 @@ impl Telua {
       Ok(())
     };
 
-    setup_interface(machine, "mw", {
+    setup_interface(&mut machine, "mw", {
       let mut args = LuaTable::default();
       args.insert_bool("allowEnvFuncs", false);
       args
@@ -320,10 +336,10 @@ impl Telua {
       ("pagesInNamespace", "mw_interface-pagesInNamespace-3"),
       ("userInGroup", "mw_interface-userInGroup-3"),
       ("interwikiMap", "mw_interface-interwikiMap-3"),
-      ].iter().for_each(|it| table.insert_string(it.0, it.1));
+    ].iter().for_each(|it| table.insert_string(it.0, it.1));
     println!("mw_interface: {:#?}", machine.machine.register_library("mw_interface", table).unwrap());
 
-    setup_interface(machine, "mw.site", {
+    setup_interface(&mut machine, "mw.site", {
       let mut args = LuaTable::default();
       [
         ("siteName", "widictor"),
@@ -348,54 +364,75 @@ impl Telua {
       args.insert_string_table("stats", stats);
       args
     }).unwrap();
-      ("mw.uri", &|_| {}),
-      ("mw.ustring", &|args| {
-        args.insert_integer("stringLengthLimit", 2097152);
-        args.insert_integer("patternLengthLimit", 10000);
-      }),
-      ("mw.language", &|_| {}),
-      ("mw.message", &|args| {
-        args.insert_string("lang", "la");
-      }),
-      ("mw.title", &|args| {
-        let mut this_title = LuaTable::default();
-        this_title.insert_bool("isCurrentTitle", true);
-        this_title.insert_bool("isLocal", true);
-        this_title.insert_string("interwiki", "");
-        this_title.insert_integer("namespace", 0);
-        this_title.insert_string("nsText", "");
-        this_title.insert_string("text", "Sample");
-        this_title.insert_string("fragment", "");
-        this_title.insert_string("thePartialUrl", "Sample");
-        this_title.insert_bool("file", false);
-        args.insert_string_table("thisTitle", this_title);
-        args.insert_integer("NS_MEDIA", -2);
-      }),
-      ("mw.text", &|args| {
-        args.insert_string_table("nowiki_protocols", LuaTable::default());
-        args.insert_string("comma", ",");
-        args.insert_string("and", " et ");
-        args.insert_string("ellipsis", "...");
-      }),
-      ("mw.html", &|args| {
-        args.insert_string("uniqPrefix", "^?'\"`UNIQ-");
-        args.insert_string("uniqSuffix", "-QINU`\"'^?");
-      }),
-      ("mw.hash", &|_| {}),
-    ];
-    for it in z {
-      if let Some(setup) = machine.call_file(it.0, &format!("{}.lua", it.0)).unwrap().get_string_table(1).and_then(|it| it.get_function("setupInterface")) {
-        let mut table = LuaTable::default();
-        it.1(&mut table);
-        let mut args = LuaTable::default();
-        args.insert_string_table(1, table);
-        machine.call(setup, args).unwrap();
-      } else {
-        it.1(&mut Default::default());
-      }
-    }
 
-    Self { machine }
+    let mut table = LuaTable::default();
+    // fakes
+    [
+      ("anchorEncode", "mw_interface-anchorEncode-4"),
+      ("localUrl", "mw_interface-localUrl-4"),
+      ("fullUrl", "mw_interface-fullUrl-4"),
+      ("canonicalUrl", "mw_interface-canonicalUrl-4"),
+    ].iter().for_each(|it| table.insert_string(it.0, it.1));
+    println!("mw_interface: {:#?}", machine.machine.register_library("mw_interface", table).unwrap());
+
+    setup_interface(&mut machine, "mw.uri", LuaTable::default()).unwrap();
+
+    let mut table = LuaTable::default();
+    // fakes
+    [
+      ("find", "mw_interface-find-5"),
+      ("match", "mw_interface-match-5"),
+      ("gmatch_init", "mw_interface-gmatch_init-5"),
+      ("gmatch_callback", "mw_interface-gmatch_callback-5"),
+      ("gsub", "mw_interface-gsub-5"),
+    ].iter().for_each(|it| table.insert_string(it.0, it.1));
+    println!("mw_interface: {:#?}", machine.machine.register_library("mw_interface", table).unwrap());
+
+    setup_interface(&mut machine, "mw.ustring", {
+      let mut args = LuaTable::default();
+      args.insert_integer("stringLengthLimit", 2097152);
+      args.insert_integer("patternLengthLimit", 10000);
+      args
+    }).unwrap();
+    setup_interface(&mut machine, "mw.language", LuaTable::default()).unwrap();
+    setup_interface(&mut machine, "mw.message", {
+      let mut args = LuaTable::default();
+      args.insert_string("lang", "la");
+      args
+    }).unwrap();
+    setup_interface(&mut machine, "mw.title", {
+      let mut args = LuaTable::default();
+      let mut this_title = LuaTable::default();
+      this_title.insert_bool("isCurrentTitle", true);
+      this_title.insert_bool("isLocal", true);
+      this_title.insert_string("interwiki", "");
+      this_title.insert_integer("namespace", 0);
+      this_title.insert_string("nsText", "");
+      this_title.insert_string("text", "Sample");
+      this_title.insert_string("fragment", "");
+      this_title.insert_string("thePartialUrl", "Sample");
+      this_title.insert_bool("file", false);
+      args.insert_string_table("thisTitle", this_title);
+      args.insert_integer("NS_MEDIA", -2);
+      args
+    }).unwrap();
+    setup_interface(&mut machine, "mw.text", {
+      let mut args = LuaTable::default();
+      args.insert_string_table("nowiki_protocols", LuaTable::default());
+      args.insert_string("comma", ",");
+      args.insert_string("and", " et ");
+      args.insert_string("ellipsis", "...");
+      args
+    }).unwrap();
+    setup_interface(&mut machine, "mw.html", {
+      let mut args = LuaTable::default();
+      args.insert_string("uniqPrefix", "^?'\"`UNIQ-");
+      args.insert_string("uniqSuffix", "-QINU`\"'^?");
+      args
+    }).unwrap();
+    setup_interface(&mut machine, "mw.hash", LuaTable::default()).unwrap();
+
+    machine
   }
 }
 

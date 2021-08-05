@@ -212,7 +212,6 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
   pub fn load_file(&mut self, name: &str, file: &str) -> Result<LuaChunk, Box<dyn std::error::Error>> {
     for p in self.includes.iter() {
       let p = p.join(file);
-      println!("\x1b[33m{}\x1b[0m", p.display());
       if p.exists() {
         println!("\x1b[32mFILE: {}\x1b[0m", p.display());
         let file = std::fs::read_to_string(p)?;
