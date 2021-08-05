@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 use nom::IResult;
 
-use crate::{LuaFloat, LuaInteger, LuaNameType, LuaString, LuaType, Parser, lua_bool::LuaBool, lua_null::LuaNull, php_error::PhpError};
+use crate::{LuaFloat, LuaInteger, LuaNameType, LuaString, LuaType, Parser, lua_bool::LuaBool, lua_chunk::LuaChunk, lua_null::LuaNull, php_error::PhpError};
 
 macro_rules! any {
 	($raw: ty, $kind: expr, $pkind: path, $asraw: ident) => {
@@ -28,6 +28,7 @@ pub enum AnyLua {
   Null(LuaNull),
   Bool(LuaBool),
   Integer(LuaInteger),
+  Chunk(LuaChunk),
   StringTable(LuaTable<LuaString>),
   IntegerTable(LuaTable<LuaInteger>),
 }
@@ -39,6 +40,7 @@ impl std::fmt::Display for AnyLua {
       AnyLua::Null(v) => v.fmt(f),
       AnyLua::Bool(v) => v.fmt(f),
       AnyLua::Integer(v) => v.fmt(f),
+      AnyLua::Chunk(v) => v.fmt(f),
       AnyLua::StringTable(v) => v.fmt(f),
       AnyLua::IntegerTable(v) => v.fmt(f),
     }
@@ -49,6 +51,7 @@ any!(LuaFloat, AnyLua::Float, AnyLua::Float, as_float);
 any!(LuaNull, AnyLua::Null, AnyLua::Null, as_null);
 any!(LuaBool, AnyLua::Bool, AnyLua::Bool, as_bool);
 any!(LuaInteger, AnyLua::Integer, AnyLua::Integer, as_integer);
+any!(LuaChunk, AnyLua::Chunk, AnyLua::Chunk, to_chunk);
 any!(LuaTable<LuaInteger>, AnyLua::IntegerTable, AnyLua::IntegerTable, as_integer_table);
 
 impl From<LuaTable<LuaString>> for AnyLua {
@@ -100,6 +103,9 @@ impl<T: LuaNameType> LuaTable<T> {
   pub fn insert_integer<A: Into<T>, B: Into<LuaInteger>>(&mut self, property: A, value: B) {
     self.insert(property.into(), value.into());
   }
+  pub fn insert_chunk<A: Into<T>, B: Into<LuaChunk>>(&mut self, property: A, value: B) {
+    self.insert(property.into(), value.into());
+  }
   pub fn insert_float<A: Into<T>, B: Into<LuaFloat>>(&mut self, property: A, value: B) {
     self.insert(property.into(), value.into());
   }
@@ -133,8 +139,8 @@ impl<T: LuaNameType> LuaTable<T> {
   pub fn get_integer_table<A: Into<T>>(&self, property: A) -> Option<LuaTable<LuaInteger>> {
     self.get(property).and_then(AnyLua::as_integer_table)
   }
-  pub fn get_function<A: Into<T>>(&self, property: A) -> Option<i32> {
-    self.get_string_table(property).and_then(|it| it.get_integer("id")).map(|it| *it.as_raw())
+  pub fn get_function<A: Into<T>>(&self, property: A) -> Option<LuaChunk> {
+    self.get_string_table(property).and_then(|it| it.get_integer("id")).map(|it| it.to_chunk())
   }
 }
 impl<T: LuaNameType> Display for LuaTable<T> {

@@ -1,4 +1,5 @@
 pub use lua_bool::LuaBool;
+use lua_chunk::LuaChunk;
 pub use lua_float::LuaFloat;
 pub use lua_integer::LuaInteger;
 pub use lua_null::LuaNull;
@@ -15,6 +16,7 @@ mod lua_float;
 mod lua_table;
 mod lua_bool;
 mod lua_null;
+mod lua_chunk;
 use php_error::PhpError;
 
 #[macro_export]
@@ -193,7 +195,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
       vsize: *r.get_integer("vsize").unwrap().as_raw() as _,
     })
   }
-  pub fn load_string(&mut self, name: &str, text: &str) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
+  pub fn load_string(&mut self, name: &str, text: &str) -> Result<LuaChunk, Box<dyn std::error::Error>> {
     let text = text.replace("\\", "\\\\")
       .replace("\n", "\\n")
       .replace("\r", "\\r")
@@ -201,12 +203,13 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     self.output.encode(ToLuaMessage::LoadString { text: text.into(), name: name.into() })?;
     let r = self.input.decode()?;
     let r = self.decode_ack(r)?;
+    let r = r.get_integer(1).unwrap().to_chunk();
     Ok(r)
     // Ok(RLoadString {
     //   id: *r.get_integer(1).unwrap().as_raw(),
     // })
   }
-  pub fn load_file(&mut self, name: &str, file: &str) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
+  pub fn load_file(&mut self, name: &str, file: &str) -> Result<LuaChunk, Box<dyn std::error::Error>> {
     for p in self.includes.iter() {
       let p = p.join(file);
       println!("\x1b[33m{}\x1b[0m", p.display());
@@ -219,18 +222,18 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     Err(format!("file {} not found", file).into())
   }
   pub fn call_string(&mut self, name: &str, src: &str) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
-    let id = *self.load_string(name, src)?.get_integer(1).unwrap().as_raw();
+    let id = self.load_string(name, src)?;
     let data = self.call(id, Default::default())?;
     Ok(data)
   }
   pub fn call_file(&mut self, name: &str, file: &str) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
-    let id = *self.load_file(name, file)?.get_integer(1).unwrap().as_raw();
+    let id = self.load_file(name, file)?;
     let data = self.call(id, Default::default())?;
     Ok(data)
   }
-  pub fn call(&mut self, id: i32, args: LuaTable<LuaInteger>) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
+  pub fn call(&mut self, id: LuaChunk, args: LuaTable<LuaInteger>) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
     println!("call({})", id);
-    self.output.encode(ToLuaMessage::Call { id: id.into(), args })?;
+    self.output.encode(ToLuaMessage::Call { id: id.to_integer(), args })?;
     let r = self.input.decode()?;
     self.decode_ack(r)
   }
@@ -239,13 +242,13 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     let _ = self.input.decode()?;
     Ok(RRegisterLibrary {})
   }
-  pub fn cleanup_chunks(&mut self, owned: Vec<i32>) -> Result<RCleanupChunks, Box<dyn std::error::Error>> {
+  pub fn cleanup_chunks(&mut self, owned: Vec<LuaChunk>) -> Result<RCleanupChunks, Box<dyn std::error::Error>> {
     let mut ids = LuaTable {
       value: Default::default(),
       object: None,
     };
     for id in owned.into_iter() {
-      ids.insert_bool(id as i32, true);
+      ids.insert_bool(*id.as_raw(), true);
     }
     self.output.encode(ToLuaMessage::CleanupChunks { ids })?;
     let _ = self.input.decode()?;

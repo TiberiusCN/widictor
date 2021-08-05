@@ -1,6 +1,6 @@
 use std::fmt::Display;
 use nom::IResult;
-use crate::{LuaNameType, LuaString, LuaType, Parser, php_error::PhpError};
+use crate::{LuaNameType, LuaString, LuaType, Parser, lua_chunk::LuaChunk, php_error::PhpError};
 
 #[derive(PartialEq, Eq, Hash, Default, Debug, Clone)]
 pub struct LuaInteger(i32);
@@ -16,6 +16,7 @@ impl LuaInteger {
   }
   pub fn to_raw(self) -> i32 { self.0 }
   pub fn as_raw(&self) -> &i32 { &self.0 }
+  pub fn to_chunk(self) -> LuaChunk { LuaChunk::new(&self) }
 }
 impl Display for LuaInteger {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
