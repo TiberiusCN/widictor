@@ -211,13 +211,14 @@ impl Telua {
       4,
       vec!["pkg".to_owned()],
     ).unwrap();
+    let machine = Self { machine };
 
-    machine.call_file("mwInit_lua", "mwInit.lua").unwrap();
+    machine.machine.call_file("mwInit_lua", "mwInit.lua").unwrap();
 
     let mut table = LuaTable::<LuaString>::default();
     //table.insert_string("", "mw-require");
     table.insert_string("loadPackage", "loadPackage");
-    machine.insert_callback("loadPackage", Box::new(|instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
+    machine.machine.insert_callback("loadPackage", Box::new(|instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
       let file_id = table.get_string(1).unwrap().as_raw().to_owned();
       let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
         //format!("/tmp/widictor/modules/{}.lua", file_id)
@@ -259,12 +260,12 @@ impl Telua {
       ].iter().for_each(|it| table.insert_string(it.0, it.1));
 
     //
-    println!("mw_interface: {:#?}", machine.register_library("mw_interface", table).unwrap());
+    println!("mw_interface: {:#?}", machine.machine.register_library("mw_interface", table).unwrap());
 
     let mut table = LuaTable::<LuaString>::default();
     table.insert_string("require", "mw-require");
-    println!("{:#?}", machine.register_library("vm", table).unwrap());
-    machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
+    println!("{:#?}", machine.machine.register_library("vm", table).unwrap());
+    machine.machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
       let file_id = table.get_string(1).unwrap().as_raw().to_owned();
       let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
         format!("/tmp/widictor/modules/{}.lua", file_id)
@@ -297,33 +298,56 @@ impl Telua {
        out
     }));
 
-    let z: &[(&str, &dyn Fn(&mut LuaTable<LuaString>))] = &[
-      ("mw", &|args| {
-        args.insert_bool("allowEnvFuncs", false);
-      }),
-      ("mw.site", &|args| {
-        [
-          ("siteName", "widictor"),
-          ("server", "http://localhost"),
-          ("scriptPath", ""),
-          ("stylePath", ""),
-          ("current_version", env!("CARGO_PKG_VERSION")),
-        ].iter().for_each(|it| args.insert_string(it.0, it.1));
-        args.insert_integer_table("namespaces", LuaTable::default());
-        let stats = [
-          ("pages", 1),
-          ("articles", 0),
-          ("files", 0),
-          ("edits", 0),
-          ("users", 1),
-          ("activeUsers", 1),
-          ("admins", 1),
-        ].iter().fold(LuaTable::default(), |mut acc, it| {
-          acc.insert_integer(it.0, it.1);
-          acc
-        });
-        args.insert_string_table("stats", stats);
-      }),
+    let setup_interface = |machine: Telua, name, arg| {
+      let setup = machine.machine.call_file(name, &format!("{}.lua", name))?.get_string_table(1).and_then(|it| it.get_function("setupInterface")).unwrap();
+      let mut args = LuaTable::default();
+      args.insert_string_table(1, arg);
+      machine.machine.call(setup, args)?;
+      Ok(())
+    };
+
+    setup_interface(machine, "mw", {
+      let mut args = LuaTable::default();
+      args.insert_bool("allowEnvFuncs", false);
+      args
+    }).unwrap();
+    machine.machine.load_file("package", "package.lua").unwrap();
+    let mut table = LuaTable::default();
+    // fakes
+    [
+      ("getNsIndex", "mw_interface-getNsIndex-3"),
+      ("pagesInCategory", "mw_interface-pagesInCategory-3"),
+      ("pagesInNamespace", "mw_interface-pagesInNamespace-3"),
+      ("userInGroup", "mw_interface-userInGroup-3"),
+      ("interwikiMap", "mw_interface-interwikiMap-3"),
+      ].iter().for_each(|it| table.insert_string(it.0, it.1));
+    println!("mw_interface: {:#?}", machine.machine.register_library("mw_interface", table).unwrap());
+
+    setup_interface(machine, "mw.site", {
+      let mut args = LuaTable::default();
+      [
+        ("siteName", "widictor"),
+        ("server", "http://localhost"),
+        ("scriptPath", ""),
+        ("stylePath", ""),
+        ("current_version", env!("CARGO_PKG_VERSION")),
+      ].iter().for_each(|it| args.insert_string(it.0, it.1));
+      args.insert_integer_table("namespaces", LuaTable::default());
+      let stats = [
+        ("pages", 1),
+        ("articles", 0),
+        ("files", 0),
+        ("edits", 0),
+        ("users", 1),
+        ("activeUsers", 1),
+        ("admins", 1),
+      ].iter().fold(LuaTable::default(), |mut acc, it| {
+        acc.insert_integer(it.0, it.1);
+        acc
+      });
+      args.insert_string_table("stats", stats);
+      args
+    }).unwrap();
       ("mw.uri", &|_| {}),
       ("mw.ustring", &|args| {
         args.insert_integer("stringLengthLimit", 2097152);
@@ -366,6 +390,8 @@ impl Telua {
         let mut args = LuaTable::default();
         args.insert_string_table(1, table);
         machine.call(setup, args).unwrap();
+      } else {
+        it.1(&mut Default::default());
       }
     }
 
