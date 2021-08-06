@@ -202,8 +202,11 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
 pub struct Telua {
   pub machine: LuaInstance<std::process::ChildStdout, std::process::ChildStdin>,
 }
+type TeluaError = Box<dyn std::error::Error>;
+type TeluaResult<T> = Result<T, Box<dyn std::error::Error>>;
+type ApiMap = HashMap<&'static str, Box<dyn Fn(&mut LuaInstance<std::process::ChildStdout, std::process::ChildStdin>, LuaTable<LuaInteger>) -> LuaTable<LuaInteger>>>;
 impl Telua {
-  pub fn new() -> Self {
+  fn empty() -> TeluaResult<Self> {
     let machine = LuaInstance::new(
       "pkg/mw_main.lua",
       "pkg",
@@ -213,16 +216,35 @@ impl Telua {
         "pkg".to_owned(),
         "pkg/ustring".to_owned(),
       ],
-    ).unwrap();
-    let mut machine = Self { machine };
-
-    machine.machine.call_file("mwInit_lua", "mwInit.lua").unwrap();
-
-    let mut table = LuaTable::<LuaString>::default();
-    //table.insert_string("", "mw-require");
-    table.insert_string("loadPackage", "loadPackage");
-    machine.machine.insert_callback("loadPackage", Box::new(|instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
-      let file_id = table.get_string(1).unwrap().as_raw().to_owned();
+    )?;
+    Ok(Self { machine })
+  }
+  fn mw_init(&mut self) -> TeluaResult<()> {
+    self.machine.call_file("mwInit_lua", "mwInit.lua")?;
+    Ok(())
+  }
+  fn package(&mut self) -> TeluaResult<()> {
+    self.machine.load_file("package", "package.lua")?;
+    Ok(())
+  }
+  fn register_library(&mut self, libname: &str, version: u32, api: ApiMap) -> TeluaResult<()> {
+    let mut table = LuaTable::default();
+    for (id, l) in api {
+      let name = format!("{}-{}-{}", libname, id, version);
+      table.insert_string(id, &name);
+      self.machine.insert_callback(&name, l);
+    }
+    self.machine.register_library(libname, table)?;
+    Ok(())
+  }
+  fn mw_interface_1(&mut self) -> TeluaResult<()> {
+    let mut api = ApiMap::new();
+    self.register_library("mw_interface", 1, api)
+  }
+  fn mw_interface_2(&mut self) -> TeluaResult<()> {
+    let mut api = ApiMap::new();
+    api.insert("loadPackage", Box::new(|instance, args| {
+      let file_id = args.get_string(1).unwrap().as_raw().to_owned();
       let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
         //format!("/tmp/widictor/modules/{}.lua", file_id)
         format!("{}.lua", file_id)
@@ -235,33 +257,12 @@ impl Telua {
         format!("{}.lua", file_id)
       };
       println!("req: \x1b[31m{}\x1b[0m", file);
-      // let file = std::fs::read_to_string(file).unwrap();
-      // let file = file.replace("\\", "\\\\")
-      //   .replace("\n", "\\n")
-      //   .replace("\r", "\\r")
-      //   .replace("\"", "\\\"");
       let chunk = instance.load_file(&file_id, &file).unwrap();
       let mut out = LuaTable::default();
       out.insert_chunk(1, chunk);
       out
     }));
-    // fakes
-    [
-      ("loadPHPLibrary", "load_widictor_library"),
-      ("frameExists", "mw_interface-frameExists-2"),
-      ("newChildFrame", "mw_interface-newChildFrame-2"),
-      ("getExpandedArgument", "mw_interface-getExpandedArgument-2"),
-      ("getAllExpandedArguments", "mw_interface-getAllExpandedArguments-2"),
-      ("expandTemplate", "mw_interface-expandTemplate-2"),
-      ("callParserFunction", "mw_interface-callParserFunction-2"),
-      ("preprocess", "mw_interface-preprocess-2"),
-      ("incrementExpensiveFunctionCount", "mw_interface-incrementExpensiveFunctionCount-2"),
-      ("isSubsting", "mw_interface-isSubsting-2"),
-      ("getFrameTitle", "mw_interface-getFrameTitle-2"),
-      ("setTTL", "mw_interface-setTTL-2"),
-      ("addWarning", "mw_interface-addWarning-2"),
-    ].iter().for_each(|it| table.insert_string(it.0, it.1));
-    machine.machine.insert_callback("load_widictor_library", Box::new(|machine, args| {
+    api.insert("loadPHPLibrary", Box::new(|instance, args| {
       let file_id = args.get_string(1).unwrap().as_raw().to_owned();
       // let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
       //   format!("/tmp/widictor/modules/{}", file_id)
@@ -270,74 +271,76 @@ impl Telua {
       // };
       let file = file_id;
       println!("req: \x1b[31m{}\x1b[0m", file);
-      let api = machine.call_file(&file, &format!("{}.lua", file)).unwrap();
+      let api = instance.call_file(&file, &format!("{}.lua", file)).unwrap();
       api
     }));
-
-    //
-    println!("mw_interface: {:#?}", machine.machine.register_library("mw_interface", table).unwrap());
-
-    let mut table = LuaTable::<LuaString>::default();
-    table.insert_string("require", "mw-require");
-    println!("{:#?}", machine.machine.register_library("vm", table).unwrap());
-    machine.machine.insert_callback("mw-require", Box::new(|_instance: &mut LuaInstance<_, _>, table: LuaTable<LuaInteger>| {
-      panic!("ohm");
-      let file_id = table.get_string(1).unwrap().as_raw().to_owned();
-      let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
-        format!("/tmp/widictor/modules/{}.lua", file_id)
-      } else {
-        let file_id = match file_id.as_str() {
-          "libraryUtil" => "libraryUtil",
-          "ustring" => "ustring/ustring",
-          "mw" => "mw",
-          "mw.site" => "mw.site",
-          "mw.uri" => "mw.uri",
-          "mw.ustring" => "mw.ustring",
-          "mw.language" => "mw.language",
-          "mw.message" => "mw.message",
-          "mw.title" => "mw.title",
-          "mw.text" => "mw.text",
-          "mw.html" => "mw.html",
-          "mw.hash" => "mw.hash",
-          e => panic!("unknown file: {}", e),
-        };
-        format!("pkg/{}.lua", file_id)
-      };
-      println!("req: \x1b[31m{}\x1b[0m", file);
-      let file = std::fs::read_to_string(file).unwrap();
-       let file = file.replace("\\", "\\\\")
-         .replace("\n", "\\n")
-         .replace("\r", "\\r")
-         .replace("\"", "\\\"");
-       let mut out = LuaTable::default();
-       out.insert_string(1, file.as_str());
-       out
-    }));
-
-    let setup_interface = |machine: &mut Telua, name, arg| -> Result<(), Box<dyn std::error::Error>> {
-      let setup = machine.machine.call_file(name, &format!("{}.lua", name))?.get_string_table(1).and_then(|it| it.get_function("setupInterface")).unwrap();
+    api.insert("frameExists", Box::new(|_, _| todo!()));
+    api.insert("newChildFrame", Box::new(|_, _| todo!()));
+    api.insert("getExpandedArgument", Box::new(|_, _| todo!()));
+    api.insert("getAllExpandedArguments", Box::new(|_, _| todo!()));
+    api.insert("expandTemplate", Box::new(|_, _| todo!()));
+    api.insert("callParserFunction", Box::new(|_, _| todo!()));
+    api.insert("preprocess", Box::new(|_, _| todo!()));
+    api.insert("incrementExpensiveFunctionCount", Box::new(|_, _| todo!()));
+    api.insert("isSubstring", Box::new(|_, _| todo!()));
+    api.insert("getFrameTitle", Box::new(|_, _| todo!()));
+    api.insert("setTTL", Box::new(|_, _| todo!()));
+    api.insert("addWarning", Box::new(|_, _| todo!()));
+    self.register_library("mw_interface", 2, api)
+  }
+  fn mw_interface_3(&mut self) -> TeluaResult<()> {
+    let mut api = ApiMap::new();
+    api.insert("getNsIndex", Box::new(|_, _| todo!()));
+    api.insert("pagesInCategory", Box::new(|_, _| todo!()));
+    api.insert("pagesInNamespace", Box::new(|_, _| todo!()));
+    api.insert("userInGroup", Box::new(|_, _| todo!()));
+    api.insert("interwikiMap", Box::new(|_, _| todo!()));
+    self.register_library("mw_interface", 3, api)
+  }
+  fn mw_interface_4(&mut self) -> TeluaResult<()> {
+    Ok(())
+  }
+  fn mw_interface_5(&mut self) -> TeluaResult<()> {
+    Ok(())
+  }
+  fn mw_interface_6(&mut self) -> TeluaResult<()> {
+    Ok(())
+  }
+  fn mw_interface_7(&mut self) -> TeluaResult<()> {
+    Ok(())
+  }
+  fn mw_interface_8(&mut self) -> TeluaResult<()> {
+    Ok(())
+  }
+  fn mw_interface_9(&mut self) -> TeluaResult<()> {
+    Ok(())
+  }
+  fn mw_interface_10(&mut self) -> TeluaResult<()> {
+    Ok(())
+  }
+  fn setup_interface<F: Fn(&mut LuaTable<LuaString>)>(&mut self, name: &str, arg_gen: F) -> TeluaResult<()> {
+    let setup = self.machine.call_file(name, &format!("{}.lua", name))?
+      .get_string_table(1).and_then(|it| it.get_function("setupInterface")).ok_or_else(|| format!("setupInterface not found for {}", name))?;
+    let mut args = LuaTable::default();
+    args.insert_string_table(1, {
       let mut args = LuaTable::default();
-      args.insert_string_table(1, arg);
-      machine.machine.call(setup, args)?;
-      Ok(())
-    };
-
-    setup_interface(&mut machine, "mw", {
-      let mut args = LuaTable::default();
-      args.insert_bool("allowEnvFuncs", false);
+      arg_gen(&mut args);
       args
-    }).unwrap();
-    machine.machine.load_file("package", "package.lua").unwrap();
+    });
+    self.machine.call(setup, args)?;
+    Ok(())
+  }
+  pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    let mut machine = Self::empty()?;
+    machine.mw_interface_1()?;
+    machine.mw_init()?;
+    machine.mw_interface_2()?;
+    machine.setup_interface("mw", |args| {
+      args.insert_bool("allowEnvFuncs", false);
+    })?;
+    machine.package()?;
+    machine.mw_interface_3()?;
     let mut table = LuaTable::default();
-    // fakes
-    [
-      ("getNsIndex", "mw_interface-getNsIndex-3"),
-      ("pagesInCategory", "mw_interface-pagesInCategory-3"),
-      ("pagesInNamespace", "mw_interface-pagesInNamespace-3"),
-      ("userInGroup", "mw_interface-userInGroup-3"),
-      ("interwikiMap", "mw_interface-interwikiMap-3"),
-    ].iter().for_each(|it| table.insert_string(it.0, it.1));
-    println!("mw_interface: {:#?}", machine.machine.register_library("mw_interface", table).unwrap());
 
     setup_interface(&mut machine, "mw.site", {
       let mut args = LuaTable::default();
