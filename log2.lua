@@ -1,16 +1,16 @@
-registerLibrary(
+» registerLibrary(
   name="mw_interface",
   functions={}
 )
 getStatus()
-loadString(#text_chunkName(@mwInit.lua))
+» loadString(#text_chunkName(@mwInit.lua))
 getStatus()
 call(
   id=1,
   nargs=0,
   args={}
 )
-registerLibrary(  
+» registerLibrary(  
   name="mw_interface",  
   functions={
     loadPackage="mw_interface-loadPackage-2",  
@@ -31,7 +31,7 @@ registerLibrary(
 )
 getStatus()
 cleanupChunks(ids={})
-loadString(#text_chunkName(@mw.lua))
+»loadString(#text_chunkName(@mw.lua))
 getStatus()
 call(
   id=4,
@@ -48,14 +48,14 @@ call(
     }
   }
 )
-loadString(#text_chunkName(@package.lua))
+»loadString(#text_chunkName(@package.lua))
 return(
   nvalues=1,
   values={
     [1]=chunks[20]
   }
 )
-registerLibrary(
+»registerLibrary(
   name="mw_interface",
   functions={
     getNsIndex="mw_interface-getNsIndex-3",
@@ -67,7 +67,7 @@ registerLibrary(
 )
 getStatus()
 cleanupChunks(#ids(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
-loadString(#text_chunkName(@mw.site.lua))
+»loadString(#text_chunkName(@mw.site.lua))
 getStatus()
 call(
   id=21,
@@ -461,7 +461,7 @@ call(
     }
   }
 )
-registerLibrary(
+»registerLibrary(
   name="mw_interface",
   functions={
     anchorEncode="mw_interface-anchorEncode-4",
@@ -472,7 +472,7 @@ registerLibrary(
 )
 getStatus()
 cleanupChunks(#ids(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
-loadString(#text_chunkName(@mw.uri.lua))
+»loadString(#text_chunkName(@mw.uri.lua))
 getStatus()
 call(
   id=23,
@@ -485,7 +485,7 @@ return(
     [1]=nil
   }
 )
-loadString(#text_chunkName(@libraryUtil.lua))
+?»loadString(#text_chunkName(@libraryUtil.lua))
 return(
   nvalues=1,
   values={
@@ -502,7 +502,7 @@ call(
     }
   }
 )
-registerLibrary(
+»registerLibrary(
   name="mw_interface",
   functions={
     find="mw_interface-find-5",
@@ -514,7 +514,7 @@ registerLibrary(
 )
 getStatus()
 cleanupChunks(#ids(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
-loadString(#text_chunkName(@mw.ustring.lua))
+»loadString(#text_chunkName(@mw.ustring.lua))
 getStatus()
 call(
   id=36,
@@ -527,7 +527,7 @@ return(
     [1]=nil
   }
 )
-loadString(#text_chunkName(@ustring.lua))
+?»loadString(#text_chunkName(@ustring.lua))
 return(
   nvalues=1,
   values={
@@ -545,7 +545,7 @@ call(
     }
   }
 )
-registerLibrary(
+»registerLibrary(
   name="mw_interface",
   functions={
     getContLangCode="mw_interface-getContLangCode-6",
@@ -574,7 +574,7 @@ registerLibrary(
 )
 getStatus()
 cleanupChunks(#ids(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
-loadString(#text_chunkName(@mw.language.lua))
+»loadString(#text_chunkName(@mw.language.lua))
 getStatus()
 call(
   id=59,
@@ -596,7 +596,7 @@ return(
     [1]="la"
   }
 )
-registerLibrary(
+»registerLibrary(
   name="mw_interface",
   functions={
     plain="mw_interface-plain-7",
@@ -605,7 +605,7 @@ registerLibrary(
 )
 getStatus()
 cleanupChunks(#ids(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
-loadString(#text_chunkName(@mw.message.lua))
+»loadString(#text_chunkName(@mw.message.lua))
 getStatus()
 call(
   id=70,
@@ -622,7 +622,7 @@ call(
     }
   }
 )
-registerLibrary(
+»registerLibrary(
   name="mw_interface",
   functions={
     newTitle="mw_interface-newTitle-8",
@@ -639,7 +639,7 @@ registerLibrary(
 )
 getStatus()
 cleanupChunks(#ids(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
-loadString(#text_chunkName(@mw.title.lua))
+»loadString(#text_chunkName(@mw.title.lua))
 getStatus()
 call(
   id=78,
@@ -667,7 +667,7 @@ call(
     }
   }
 )
-registerLibrary(
+»registerLibrary(
   name="mw_interface",
   functions={
     unstrip="mw_interface-unstrip-9",
@@ -680,7 +680,7 @@ registerLibrary(
 )
 getStatus()
 cleanupChunks(#ids(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
-loadString(#text_chunkName(@mw.text.lua))
+»loadString(#text_chunkName(@mw.text.lua))
 getStatus()
 call(
   id=84,
@@ -712,13 +712,13 @@ call(
     }
   }
 )
-registerLibrary(
+»registerLibrary(
   name="mw_interface",
   functions={}
 )
 getStatus()
 cleanupChunks(#ids(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
-loadString(#text_chunkName(@mw.html.lua))
+»loadString(#text_chunkName(@mw.html.lua))
 getStatus()
 call(
   id=100,
@@ -736,7 +736,7 @@ call(
     }
   }
 )
-registerLibrary(
+»registerLibrary(
   name="mw_interface",
   functions={
     listAlgorithms="mw_interface-listAlgorithms-11",
@@ -745,7 +745,7 @@ registerLibrary(
 )
 getStatus()
 cleanupChunks(#ids(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
-loadString(#text_chunkName(@mw.hash.lua))
+»loadString(#text_chunkName(@mw.hash.lua))
 getStatus()
 call(
   id=103,

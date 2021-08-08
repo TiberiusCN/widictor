@@ -137,7 +137,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
             let com = convert_text(com, subwords);
             if com.starts_with("#") {
               if let Some(module) = com.strip_prefix("# invoke:") {
-                let mut telua = Telua::new();
+                let mut telua = Telua::new().unwrap();
                 println!("\x1b[32mM:{}\x1b[0m", module);
                 let proto: Proto = serde_json::from_reader(std::fs::File::open(format!("/tmp/widictor/modules/{}.proto", &module)).unwrap()).unwrap();
                 let module = format!("/tmp/widictor/modules/{}.lua", module);
@@ -298,25 +298,92 @@ impl Telua {
     self.register_library("mw_interface", 3, api)
   }
   fn mw_interface_4(&mut self) -> TeluaResult<()> {
-    Ok(())
+    let mut api = ApiMap::new();
+    api.insert("anchorEncode", Box::new(|_, _| todo!()));
+    api.insert("localUrl", Box::new(|_, _| todo!()));
+    api.insert("fullUrl", Box::new(|_, _| todo!()));
+    api.insert("canonicalUrl", Box::new(|_, _| todo!()));
+    self.register_library("mw_interface", 4, api)
   }
   fn mw_interface_5(&mut self) -> TeluaResult<()> {
-    Ok(())
+    let mut api = ApiMap::new();
+    api.insert("find", Box::new(|_, _| todo!()));
+    api.insert("match", Box::new(|_, _| todo!()));
+    api.insert("gmatch_init", Box::new(|_, _| todo!()));
+    api.insert("gmatch_callback", Box::new(|_, _| todo!()));
+    api.insert("gsub", Box::new(|_, _| todo!()));
+    self.register_library("mw_interface", 5, api)
   }
   fn mw_interface_6(&mut self) -> TeluaResult<()> {
-    Ok(())
+    let mut api = ApiMap::new();
+    api.insert("getContLangCode", Box::new(|_, _| todo!()));
+    api.insert("isSupportedLanguage", Box::new(|_, _| todo!()));
+    api.insert("isKnownLanguageTag", Box::new(|_, _| todo!()));
+    api.insert("isValidCode", Box::new(|_, _| todo!()));
+    api.insert("isValidBuiltInCode", Box::new(|_, _| todo!()));
+    api.insert("fetchLanguageName", Box::new(|_, _| todo!()));
+    api.insert("fetchLanguageNames", Box::new(|_, _| todo!()));
+    api.insert("getFallbacksFor", Box::new(|_, _| todo!()));
+    api.insert("lcfirst", Box::new(|_, _| todo!()));
+    api.insert("ucfirst", Box::new(|_, _| todo!()));
+    api.insert("lc", Box::new(|_, _| todo!()));
+    api.insert("uc", Box::new(|_, _| todo!()));
+    api.insert("caseFold", Box::new(|_, _| todo!()));
+    api.insert("formatNum", Box::new(|_, _| todo!()));
+    api.insert("formatDate", Box::new(|_, _| todo!()));
+    api.insert("formatDuration", Box::new(|_, _| todo!()));
+    api.insert("getDurationIntervals", Box::new(|_, _| todo!()));
+    api.insert("parseFormattedNumber", Box::new(|_, _| todo!()));
+    api.insert("convertPlural", Box::new(|_, _| todo!()));
+    api.insert("convertGrammar", Box::new(|_, _| todo!()));
+    api.insert("gender", Box::new(|_, _| todo!()));
+    api.insert("isRTL", Box::new(|_, _| todo!()));
+    api.insert("find", Box::new(|_, _| todo!()));
+    self.register_library("mw_interface", 6, api)
   }
   fn mw_interface_7(&mut self) -> TeluaResult<()> {
-    Ok(())
+    let mut api = ApiMap::new();
+    api.insert("plain", Box::new(|_, _| todo!()));
+    api.insert("check", Box::new(|_, _| todo!()));
+    self.register_library("mw_interface", 7, api)
   }
   fn mw_interface_8(&mut self) -> TeluaResult<()> {
-    Ok(())
+    let mut api = ApiMap::new();
+    api.insert("newTitle", Box::new(|_, _| todo!()));
+    api.insert("makeTitle", Box::new(|_, _| todo!()));
+    api.insert("getExpensiveData", Box::new(|_, _| todo!()));
+    api.insert("getUrl", Box::new(|_, _| todo!()));
+    api.insert("getContent", Box::new(|_, _| todo!()));
+    api.insert("getFileInfo", Box::new(|_, _| todo!()));
+    api.insert("protectionLevels", Box::new(|_, _| todo!()));
+    api.insert("cascadingProtection", Box::new(|_, _| todo!()));
+    api.insert("redirectTarget", Box::new(|_, _| todo!()));
+    api.insert("recordVaryFlag", Box::new(|_, _| todo!()));
+    self.register_library("mw_interface", 8, api)
   }
   fn mw_interface_9(&mut self) -> TeluaResult<()> {
-    Ok(())
+    let mut api = ApiMap::new();
+    api.insert("unstrip", Box::new(|_, _| todo!()));
+    api.insert("unstripNoWiki", Box::new(|_, _| todo!()));
+    api.insert("killMarkers", Box::new(|_, _| todo!()));
+    api.insert("getEntityTable", Box::new(|_, _| todo!()));
+    api.insert("jsonEncode", Box::new(|_, _| todo!()));
+    api.insert("jsonDecode", Box::new(|_, _| todo!()));
+    self.register_library("mw_interface", 9, api)
   }
   fn mw_interface_10(&mut self) -> TeluaResult<()> {
-    Ok(())
+    let mut api = ApiMap::new();
+    self.register_library("mw_interface", 10, api)
+  }
+  fn mw_interface_11(&mut self) -> TeluaResult<()> {
+    let mut api = ApiMap::new();
+    api.insert("listAlgorithms", Box::new(|_, _| todo!()));
+    api.insert("hashValue", Box::new(|_, _| todo!()));
+    self.register_library("mw_interface", 11, api)
+  }
+  fn mw_interface_12(&mut self) -> TeluaResult<()> {
+    let mut api = ApiMap::new();
+    self.register_library("mw_interface", 12, api)
   }
   fn setup_interface<F: Fn(&mut LuaTable<LuaString>)>(&mut self, name: &str, arg_gen: F) -> TeluaResult<()> {
     let setup = self.machine.call_file(name, &format!("{}.lua", name))?
@@ -335,23 +402,20 @@ impl Telua {
     machine.mw_interface_1()?;
     machine.mw_init()?;
     machine.mw_interface_2()?;
-    machine.setup_interface("mw", |args| {
-      args.insert_bool("allowEnvFuncs", false);
+    machine.setup_interface("mw", |it| {
+      it.insert_bool("allowEnvFuncs", false);
     })?;
     machine.package()?;
     machine.mw_interface_3()?;
-    let mut table = LuaTable::default();
-
-    setup_interface(&mut machine, "mw.site", {
-      let mut args = LuaTable::default();
+    machine.setup_interface("mw.site", |it| {
       [
         ("siteName", "widictor"),
         ("server", "http://localhost"),
         ("scriptPath", ""),
         ("stylePath", ""),
         ("current_version", env!("CARGO_PKG_VERSION")),
-      ].iter().for_each(|it| args.insert_string(it.0, it.1));
-      args.insert_integer_table("namespaces", LuaTable::default());
+      ].iter().for_each(|f| it.insert_string(f.0, f.1));
+      it.insert_integer_table("namespaces", LuaTable::default());
       let stats = [
         ("pages", 1),
         ("articles", 0),
@@ -364,47 +428,23 @@ impl Telua {
         acc.insert_integer(it.0, it.1);
         acc
       });
-      args.insert_string_table("stats", stats);
-      args
+      it.insert_string_table("stats", stats);
+    })?;
+    machine.mw_interface_4()?;
+    machine.setup_interface("mw.uri", |_| {})?;
+    machine.mw_interface_5()?;
+    machine.setup_interface("mw.ustring", |it| {
+      it.insert_integer("stringLengthLimit", 2097152);
+      it.insert_integer("patternLengthLimit", 10000);
+    })?;
+    machine.mw_interface_6()?;
+    machine.setup_interface("mw.language", |_| {})?;
+    machine.mw_interface_7()?;
+    machine.setup_interface("mw.message", |it| {
+      it.insert_string("lang", "la");
     }).unwrap();
-
-    let mut table = LuaTable::default();
-    // fakes
-    [
-      ("anchorEncode", "mw_interface-anchorEncode-4"),
-      ("localUrl", "mw_interface-localUrl-4"),
-      ("fullUrl", "mw_interface-fullUrl-4"),
-      ("canonicalUrl", "mw_interface-canonicalUrl-4"),
-    ].iter().for_each(|it| table.insert_string(it.0, it.1));
-    println!("mw_interface: {:#?}", machine.machine.register_library("mw_interface", table).unwrap());
-
-    setup_interface(&mut machine, "mw.uri", LuaTable::default()).unwrap();
-
-    let mut table = LuaTable::default();
-    // fakes
-    [
-      ("find", "mw_interface-find-5"),
-      ("match", "mw_interface-match-5"),
-      ("gmatch_init", "mw_interface-gmatch_init-5"),
-      ("gmatch_callback", "mw_interface-gmatch_callback-5"),
-      ("gsub", "mw_interface-gsub-5"),
-    ].iter().for_each(|it| table.insert_string(it.0, it.1));
-    println!("mw_interface: {:#?}", machine.machine.register_library("mw_interface", table).unwrap());
-
-    setup_interface(&mut machine, "mw.ustring", {
-      let mut args = LuaTable::default();
-      args.insert_integer("stringLengthLimit", 2097152);
-      args.insert_integer("patternLengthLimit", 10000);
-      args
-    }).unwrap();
-    setup_interface(&mut machine, "mw.language", LuaTable::default()).unwrap();
-    setup_interface(&mut machine, "mw.message", {
-      let mut args = LuaTable::default();
-      args.insert_string("lang", "la");
-      args
-    }).unwrap();
-    setup_interface(&mut machine, "mw.title", {
-      let mut args = LuaTable::default();
+    machine.mw_interface_8()?;
+    machine.setup_interface("mw.title", |it| {
       let mut this_title = LuaTable::default();
       this_title.insert_bool("isCurrentTitle", true);
       this_title.insert_bool("isLocal", true);
@@ -415,25 +455,23 @@ impl Telua {
       this_title.insert_string("fragment", "");
       this_title.insert_string("thePartialUrl", "Sample");
       this_title.insert_bool("file", false);
-      args.insert_string_table("thisTitle", this_title);
-      args.insert_integer("NS_MEDIA", -2);
-      args
-    }).unwrap();
-    setup_interface(&mut machine, "mw.text", {
-      let mut args = LuaTable::default();
-      args.insert_string_table("nowiki_protocols", LuaTable::default());
-      args.insert_string("comma", ",");
-      args.insert_string("and", " et ");
-      args.insert_string("ellipsis", "...");
-      args
-    }).unwrap();
-    setup_interface(&mut machine, "mw.html", {
-      let mut args = LuaTable::default();
-      args.insert_string("uniqPrefix", "^?'\"`UNIQ-");
-      args.insert_string("uniqSuffix", "-QINU`\"'^?");
-      args
-    }).unwrap();
-    setup_interface(&mut machine, "mw.hash", LuaTable::default()).unwrap();
+      it.insert_string_table("thisTitle", this_title);
+      it.insert_integer("NS_MEDIA", -2);
+    })?;
+    machine.mw_interface_9()?;
+    machine.setup_interface("mw.text", |it| {
+      it.insert_string_table("nowiki_protocols", LuaTable::default());
+      it.insert_string("comma", ",");
+      it.insert_string("and", " et ");
+      it.insert_string("ellipsis", "...");
+    })?;
+    machine.mw_interface_10()?;
+    machine.setup_interface("mw.html", |it| {
+      it.insert_string("uniqPrefix", "^?'\"`UNIQ-");
+      it.insert_string("uniqSuffix", "-QINU`\"'^?");
+    })?;
+    machine.mw_interface_11()?;
+    machine.setup_interface("mw.hash", |_| {})?;
 
     machine
   }
