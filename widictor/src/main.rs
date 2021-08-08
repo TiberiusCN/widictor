@@ -473,7 +473,7 @@ impl Telua {
     machine.mw_interface_11()?;
     machine.setup_interface("mw.hash", |_| {})?;
 
-    machine
+    Ok(machine)
   }
 }
 
