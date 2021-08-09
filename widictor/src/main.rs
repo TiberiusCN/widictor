@@ -203,7 +203,7 @@ pub struct Telua {
   pub machine: LuaInstance<std::process::ChildStdout, std::process::ChildStdin>,
 }
 type TeluaError = Box<dyn std::error::Error>;
-type TeluaResult<T> = Result<T, Box<dyn std::error::Error>>;
+type TeluaResult<T> = Result<T, TeluaError>;
 type ApiMap = HashMap<&'static str, Box<dyn Fn(&mut LuaInstance<std::process::ChildStdout, std::process::ChildStdin>, LuaTable<LuaInteger>) -> LuaTable<LuaInteger>>>;
 impl Telua {
   fn empty() -> TeluaResult<Self> {
@@ -238,7 +238,7 @@ impl Telua {
     Ok(())
   }
   fn mw_interface_1(&mut self) -> TeluaResult<()> {
-    let mut api = ApiMap::new();
+    let api = ApiMap::new();
     self.register_library("mw_interface", 1, api)
   }
   fn mw_interface_2(&mut self) -> TeluaResult<()> {
@@ -270,8 +270,9 @@ impl Telua {
       //   file_id
       // };
       let file = file_id;
-      println!("req: \x1b[31m{}\x1b[0m", file);
+      println!("reqphp: \x1b[33m{}\x1b[0m", file);
       let api = instance.call_file(&file, &format!("{}.lua", file)).unwrap();
+      panic!("{:#?}", api);
       api
     }));
     api.insert("frameExists", Box::new(|_, _| todo!()));
@@ -316,7 +317,11 @@ impl Telua {
   }
   fn mw_interface_6(&mut self) -> TeluaResult<()> {
     let mut api = ApiMap::new();
-    api.insert("getContLangCode", Box::new(|_, _| todo!()));
+    api.insert("getContLangCode", Box::new(|_, _| {
+      let mut ret = LuaTable::default();
+      ret.insert_string(1, "la");
+      ret
+    }));
     api.insert("isSupportedLanguage", Box::new(|_, _| todo!()));
     api.insert("isKnownLanguageTag", Box::new(|_, _| todo!()));
     api.insert("isValidCode", Box::new(|_, _| todo!()));
@@ -372,7 +377,7 @@ impl Telua {
     self.register_library("mw_interface", 9, api)
   }
   fn mw_interface_10(&mut self) -> TeluaResult<()> {
-    let mut api = ApiMap::new();
+    let api = ApiMap::new();
     self.register_library("mw_interface", 10, api)
   }
   fn mw_interface_11(&mut self) -> TeluaResult<()> {
@@ -380,10 +385,6 @@ impl Telua {
     api.insert("listAlgorithms", Box::new(|_, _| todo!()));
     api.insert("hashValue", Box::new(|_, _| todo!()));
     self.register_library("mw_interface", 11, api)
-  }
-  fn mw_interface_12(&mut self) -> TeluaResult<()> {
-    let mut api = ApiMap::new();
-    self.register_library("mw_interface", 12, api)
   }
   fn setup_interface<F: Fn(&mut LuaTable<LuaString>)>(&mut self, name: &str, arg_gen: F) -> TeluaResult<()> {
     let setup = self.machine.call_file(name, &format!("{}.lua", name))?
