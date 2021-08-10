@@ -271,7 +271,25 @@ impl Telua {
       // };
       let file = file_id;
       println!("reqphp: \x1b[33m{}\x1b[0m", file);
-      let api = instance.call_file(&file, &format!("{}.lua", file)).unwrap();
+      let api = instance.call_file(&file, &format!("{}.lua", &file)).unwrap();
+      let api = if &file == "libraryUtil" {
+        let mut api = api.get_string_table(1).unwrap();
+
+        let mut update = |id| {
+          let t = api.get_string_table(id).unwrap();
+          let f = t.get_integer("id").unwrap();
+          println!("rev {}: {}", id, f);
+          api.insert_chunk(id, f.to_chunk());
+        };
+        update("checkType");
+        update("makeCheckSelfFunction");
+
+        let mut wrap = LuaTable::default();
+        wrap.insert_string_table(1, api);
+        wrap
+      } else {
+        api
+      };
       api
     }));
     api.insert("frameExists", Box::new(|_, _| todo!()));
