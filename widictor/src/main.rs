@@ -272,7 +272,6 @@ impl Telua {
       let file = file_id;
       println!("reqphp: \x1b[33m{}\x1b[0m", file);
       let api = instance.call_file(&file, &format!("{}.lua", file)).unwrap();
-      panic!("{:#?}", api);
       api
     }));
     api.insert("frameExists", Box::new(|_, _| todo!()));

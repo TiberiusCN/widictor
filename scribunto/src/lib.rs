@@ -106,6 +106,7 @@ impl<R: Read> LuaReceiver<R> {
     match op.as_raw() {
       "return" => {
         let values = table.get_integer_table("values").unwrap();
+        // ToDo: unraw functions to chunks?
         let nvalues = table.get_integer("nvalues").unwrap();
         assert_eq!(*nvalues.as_raw(), values.len() as i32);
         Ok(LuaResult::Ret(values.clone()))

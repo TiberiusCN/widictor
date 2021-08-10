@@ -1,7 +1,6 @@
 local language = {}
 local php
 local util = require 'libraryUtil'
-local makeCheckSelfFunction = util.makeCheckSelfFunction
 
 function language.setupInterface()
 	-- Boilerplate
@@ -67,7 +66,8 @@ function language.new( code )
 
 	local lang = { code = code }
 
-	local checkSelf = makeCheckSelfFunction( 'mw.language', 'lang', lang, 'language object' )
+	util.checkType( 'code', 1, code, 'string' )
+	local checkSelf = util.makeCheckSelfFunction( 'mw.language', 'lang', lang, 'language object' )
 
 	local wrappers = {
 		lcfirst = 1,
