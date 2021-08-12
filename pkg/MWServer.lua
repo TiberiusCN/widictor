@@ -579,7 +579,7 @@ end
 function MWServer:unserialize( text )
 	local func = loadstring( 'return ' .. text )
 	if not func then
-		self:internalError( "MWServer:unserialize: invalid chunk" )
+		self:internalError( "MWServer:unserialize: invalid chunk: " .. text )
 	end
 	-- Don't waste JIT cache space by storing every message in it
 	if jit then

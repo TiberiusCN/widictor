@@ -272,23 +272,25 @@ impl Telua {
       let file = file_id;
       println!("reqphp: \x1b[33m{}\x1b[0m", file);
       let api = instance.call_file(&file, &format!("{}.lua", &file)).unwrap();
-      let api = if &file == "libraryUtil" {
+      let api = {
         let mut api = api.get_string_table(1).unwrap();
-
-        let mut update = |id| {
-          let t = api.get_string_table(id).unwrap();
-          let f = t.get_integer("id").unwrap();
-          println!("rev {}: {}", id, f);
-          api.insert_chunk(id, f.to_chunk());
-        };
-        update("checkType");
-        update("makeCheckSelfFunction");
+        let mut old_api = Default::default();
+        std::mem::swap(&mut api.value, &mut old_api);
+        api.value = old_api.into_iter().map(|(name, val)| {
+          if let Some(val) = val.as_string_table() {
+            if let Some(id) = val.object.as_ref() {
+              if id == "Scribunto_LuaStandaloneInterpreterFunction" {
+                let f = val.get_integer("id").unwrap();
+                return (name, Box::new(f.to_chunk().into()));
+              }
+            }
+          }
+          (name, val)
+        }).collect();
 
         let mut wrap = LuaTable::default();
         wrap.insert_string_table(1, api);
         wrap
-      } else {
-        api
       };
       api
     }));
@@ -485,8 +487,10 @@ impl Telua {
     })?;
     machine.mw_interface_10()?;
     machine.setup_interface("mw.html", |it| {
-      it.insert_string("uniqPrefix", "^?'\"`UNIQ-");
-      it.insert_string("uniqSuffix", "-QINU`\"'^?");
+      // it.insert_string("uniqPrefix", "^?'\"`UNIQ-");
+      // it.insert_string("uniqSuffix", "-QINU`\"'^?");
+      it.insert_string("uniqPrefix", "UNIQ-");
+      it.insert_string("uniqSuffix", "-QINU");
     })?;
     machine.mw_interface_11()?;
     machine.setup_interface("mw.hash", |_| {})?;
