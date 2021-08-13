@@ -137,10 +137,12 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
             let com = convert_text(com, subwords);
             if com.starts_with("#") {
               if let Some(module) = com.strip_prefix("# invoke:") {
+                let mut i = module.splitn(2, ":");
+                let module = i.next().unwrap();
+                let function = i.next().unwrap();
                 let mut telua = Telua::new().unwrap();
                 println!("\x1b[32mM:{}\x1b[0m", module);
                 let proto: Proto = serde_json::from_reader(std::fs::File::open(format!("/tmp/widictor/modules/{}.proto", &module)).unwrap()).unwrap();
-                let module = format!("/tmp/widictor/modules/{}.lua", module);
                 let mut table = LuaTable::<LuaString>::default();
                 for arg in args {
                   if let Some(tid) = proto.0.get(&arg.0) {
@@ -154,9 +156,9 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                     table.insert_string(arg.0, &arg.1)
                   }
                 }
-                let module = telua.machine.call_file(&module, &module).unwrap();
-                out += format!("{{MODULE: {:?}}}", module).as_str();
-                panic!("{}", out);
+                let module = telua.call(&module, &function).unwrap();
+                //out += format!("{{MODULE: {:#?}}}", module).as_str();
+                //panic!("{}", out);
               } else {
                 panic!("unknown: {}", com);
               }
@@ -215,6 +217,7 @@ impl Telua {
       vec![
         "pkg".to_owned(),
         "pkg/ustring".to_owned(),
+        "/tmp/widictor/modules".to_owned(),
       ],
     )?;
     Ok(Self { machine })
@@ -246,14 +249,12 @@ impl Telua {
     api.insert("loadPackage", Box::new(|instance, args| {
       let file_id = args.get_string(1).unwrap().as_raw().to_owned();
       let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
-        //format!("/tmp/widictor/modules/{}.lua", file_id)
         format!("{}.lua", file_id)
       } else {
         let file_id = match file_id.as_str() {
           "ustring" => "ustring/ustring",
           u => u,
         };
-        //format!("pkg/{}.lua", file_id)
         format!("{}.lua", file_id)
       };
       println!("req: \x1b[31m{}\x1b[0m", file);
@@ -264,16 +265,14 @@ impl Telua {
     }));
     api.insert("loadPHPLibrary", Box::new(|instance, args| {
       let file_id = args.get_string(1).unwrap().as_raw().to_owned();
-      // let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
-      //   format!("/tmp/widictor/modules/{}", file_id)
-      // } else {
-      //   file_id
-      // };
-      let file = file_id;
+      let file = if let Some(id) = file_id.strip_prefix("Module:") {
+        id.to_owned()
+      } else {
+        file_id
+      };
       println!("reqphp: \x1b[33m{}\x1b[0m", file);
       let api = instance.call_file(&file, &format!("{}.lua", &file)).unwrap();
-      let api = {
-        let mut api = api.get_string_table(1).unwrap();
+      let api = if let Some(mut api) = api.get_string_table(1) {
         let mut old_api = Default::default();
         std::mem::swap(&mut api.value, &mut old_api);
         api.value = old_api.into_iter().map(|(name, val)| {
@@ -291,6 +290,8 @@ impl Telua {
         let mut wrap = LuaTable::default();
         wrap.insert_string_table(1, api);
         wrap
+      } else {
+        api
       };
       api
     }));
@@ -496,6 +497,13 @@ impl Telua {
     machine.setup_interface("mw.hash", |_| {})?;
 
     Ok(machine)
+  }
+  pub fn call(&mut self, file: &str, function: &str) -> TeluaResult<String> {
+    let table = self.machine.call_file(file, &format!("{}.lua", file))?;
+    let table = table.get_string_table(1).unwrap();
+    let function = table.get_function(function).unwrap();
+    let out = self.machine.call(function, Default::default())?;
+    panic!("{:#?}", out);
   }
 }
 
