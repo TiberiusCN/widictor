@@ -156,7 +156,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                     table.insert_string(arg.0, &arg.1)
                   }
                 }
-                let module = telua.call(&module, &function).unwrap();
+                let module = telua.call(&module, &function, table).unwrap();
                 //out += format!("{{MODULE: {:#?}}}", module).as_str();
                 //panic!("{}", out);
               } else {
@@ -498,11 +498,14 @@ impl Telua {
 
     Ok(machine)
   }
-  pub fn call(&mut self, file: &str, function: &str) -> TeluaResult<String> {
+  pub fn call(&mut self, file: &str, function: &str, frame: LuaTable<LuaString>) -> TeluaResult<String> {
+    TODO: Frame https://www.mediawiki.org/wiki/Extension:Scribunto/Lua_reference_manual#Frame_object
     let table = self.machine.call_file(file, &format!("{}.lua", file))?;
     let table = table.get_string_table(1).unwrap();
     let function = table.get_function(function).unwrap();
-    let out = self.machine.call(function, Default::default())?;
+    let mut table = LuaTable::default();
+    table.insert_string_table(1, frame);
+    let out = self.machine.call(function, table)?;
     panic!("{:#?}", out);
   }
 }
