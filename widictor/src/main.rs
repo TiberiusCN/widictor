@@ -203,6 +203,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
 
 pub struct Telua {
   pub machine: LuaInstance<std::process::ChildStdout, std::process::ChildStdin>,
+  libs: HashMap<&'static str, LuaTable<LuaString>>,
 }
 type TeluaError = Box<dyn std::error::Error>;
 type TeluaResult<T> = Result<T, TeluaError>;
@@ -220,7 +221,7 @@ impl Telua {
         "/tmp/widictor/modules".to_owned(),
       ],
     )?;
-    Ok(Self { machine })
+    Ok(Self { machine, libs: Default::default() })
   }
   fn mw_init(&mut self) -> TeluaResult<()> {
     self.machine.call_file("mwInit_lua", "mwInit.lua")?;
@@ -406,9 +407,9 @@ impl Telua {
     api.insert("hashValue", Box::new(|_, _| todo!()));
     self.register_library("mw_interface", 11, api)
   }
-  fn setup_interface<F: Fn(&mut LuaTable<LuaString>)>(&mut self, name: &str, arg_gen: F) -> TeluaResult<()> {
-    let setup = self.machine.call_file(name, &format!("{}.lua", name))?
-      .get_string_table(1).and_then(|it| it.get_function("setupInterface")).ok_or_else(|| format!("setupInterface not found for {}", name))?;
+  fn setup_interface<F: Fn(&mut LuaTable<LuaString>)>(&mut self, name: &'static str, arg_gen: F) -> TeluaResult<()> {
+    let lib = self.machine.call_file(name, &format!("{}.lua", name))?.get_string_table(1).unwrap();
+    let setup = lib.get_function("setupInterface").ok_or_else(|| format!("setupInterface not found for {}", name))?;
     let mut args = LuaTable::default();
     args.insert_string_table(1, {
       let mut args = LuaTable::default();
@@ -416,6 +417,7 @@ impl Telua {
       args
     });
     self.machine.call(setup, args)?;
+    self.libs.insert(name, lib);
     Ok(())
   }
   pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
@@ -499,14 +501,22 @@ impl Telua {
     Ok(machine)
   }
   pub fn call(&mut self, file: &str, function: &str, frame: LuaTable<LuaString>) -> TeluaResult<String> {
-    TODO: Frame https://www.mediawiki.org/wiki/Extension:Scribunto/Lua_reference_manual#Frame_object
-    let table = self.machine.call_file(file, &format!("{}.lua", file))?;
-    let table = table.get_string_table(1).unwrap();
-    let function = table.get_function(function).unwrap();
-    let mut table = LuaTable::default();
-    table.insert_string_table(1, frame);
-    let out = self.machine.call(function, table)?;
+    let chunk = self.machine.load_file(file, &format!("{}.lua", file))?;
+    let mw = self.libs.get("mw").unwrap();
+    let execute_module = mw.get_function("executeModule").unwrap();
+    let mut args = LuaTable::default();
+    args.insert_chunk(1, chunk);
+    args.insert_string(2, function);
+    let out = self.machine.call(execute_module, args)?;
     panic!("{:#?}", out);
+
+    // let table = self.machine.call_file(file, &format!("{}.lua", file))?;
+    // let table = table.get_string_table(1).unwrap();
+    // let function = table.get_function(function).unwrap();
+    // let mut table = LuaTable::default();
+    // table.insert_string_table(1, frame);
+    // let out = self.machine.call(function, table)?;
+    // panic!("{:#?}", out);
   }
 }
 
