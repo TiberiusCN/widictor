@@ -1,10 +1,10 @@
 pub use lua_bool::LuaBool;
-use lua_chunk::LuaChunk;
+pub use lua_chunk::LuaChunk;
 pub use lua_float::LuaFloat;
 pub use lua_integer::LuaInteger;
 pub use lua_null::LuaNull;
 pub use lua_string::LuaString;
-use lua_table::AnyLua;
+pub use lua_table::AnyLua;
 pub use lua_table::LuaTable;
 use nom::{IResult, bytes::complete::{tag, take_while1}};
 use std::{collections::HashMap, fmt::Display, io::{Read, Write}, path::PathBuf, process::{ChildStdin, ChildStdout}, sync::Arc};

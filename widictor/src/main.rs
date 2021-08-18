@@ -42,7 +42,7 @@ pub enum TypeId {
   Integer,
   String,
 }
-#[derive(serde::Deserialize)]
+#[derive(Default, serde::Deserialize)]
 pub struct Proto(HashMap<String, TypeId>);
 
 enum AnyParse<'a> {
@@ -117,7 +117,8 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
     Ok(out)
   })?;
   let converter = |text: Vec<Text>| -> String {
-    fn convert_text(text: Vec<Text>, subwords: &mut HashSet<String>) -> String {
+    let mut telua = Telua::new().unwrap();
+    fn convert_text(text: Vec<Text>, subwords: &mut HashSet<String>, telua: &mut Telua, frame: &Frame) -> String {
       let mut out = String::new();
       for text in text {
         if !out.is_empty() { out += " "; }
@@ -129,34 +130,21 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
             }
           }
           Text::Template(template) => {
-            let args: HashMap<String, String> = template.args.into_iter().map(|it| (it.0, convert_text(it.1.1, subwords))).collect(); // ??? TODO
+            let args: HashMap<String, String> = template.args.into_iter().map(|it| (it.0, convert_text(it.1.1, subwords, telua, frame))).collect(); // ??? TODO
             let mut com = template.com;
             if matches!(com[0], Text::Tab(1)) {
               com[0] = Text::Raw("#".to_string());
             }
-            let com = convert_text(com, subwords);
+            let com = convert_text(com, subwords, telua, frame);
             if com.starts_with("#") {
               if let Some(module) = com.strip_prefix("# invoke:") {
                 let mut i = module.splitn(2, ":");
                 let module = i.next().unwrap();
                 let function = i.next().unwrap();
-                let mut telua = Telua::new().unwrap();
                 println!("\x1b[32mM:{}\x1b[0m", module);
                 let proto: Proto = serde_json::from_reader(std::fs::File::open(format!("/tmp/widictor/modules/{}.proto", &module)).unwrap()).unwrap();
-                let mut table = LuaTable::<LuaString>::default();
-                for arg in args {
-                  if let Some(tid) = proto.0.get(&arg.0) {
-                    match tid {
-                      TypeId::Bool => table.insert_bool(arg.0, arg.1 == "true"),
-                      TypeId::Float => table.insert_float(arg.0, arg.1.parse::<f32>().unwrap()),
-                      TypeId::Integer => table.insert_integer(arg.0, arg.1.parse::<i32>().unwrap()),
-                      TypeId::String => table.insert_string(arg.0, &arg.1),
-                    }
-                  } else {
-                    table.insert_string(arg.0, &arg.1)
-                  }
-                }
-                let module = telua.call(&module, &function, table).unwrap();
+                let frame = telua.new_frame(args, proto, Some(&frame)).unwrap();
+                let module = telua.call(&module, &function, frame).unwrap();
                 //out += format!("{{MODULE: {:#?}}}", module).as_str();
                 //panic!("{}", out);
               } else {
@@ -184,7 +172,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                       }
                       acc
                     });
-                    out += &convert_text(page, subwords);
+                    out += &convert_text(page, subwords, telua, frame);
                   }
                 }
               }
@@ -194,7 +182,8 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
       }
       out
     }
-    convert_text(text, subwords)
+    let frame = telua.new_frame(Default::default(), Default::default(), None).unwrap();
+    convert_text(text, subwords, &mut telua, &frame)
   };
     
   let lang = lang.convert(converter);
@@ -424,6 +413,7 @@ impl Telua {
     let mut machine = Self::empty()?;
     machine.mw_interface_1()?;
     machine.mw_init()?;
+    machine.setup_interface("mw.frame", |_| {})?;
     machine.mw_interface_2()?;
     machine.setup_interface("mw", |it| {
       it.insert_bool("allowEnvFuncs", false);
@@ -500,14 +490,19 @@ impl Telua {
 
     Ok(machine)
   }
-  pub fn call(&mut self, file: &str, function: &str, frame: LuaTable<LuaString>) -> TeluaResult<String> {
+  pub fn call(&mut self, file: &str, function: &str, frame: Frame) -> TeluaResult<String> {
     let chunk = self.machine.load_file(file, &format!("{}.lua", file))?;
     let mw = self.libs.get("mw").unwrap();
     let execute_module = mw.get_function("executeModule").unwrap();
     let mut args = LuaTable::default();
     args.insert_chunk(1, chunk);
     args.insert_string(2, function);
+    args.insert_string_table(3, frame.clone().into_raw());
     let out = self.machine.call(execute_module, args)?;
+    let out = out.get_function(2).unwrap();
+    let mut args = LuaTable::default();
+    args.insert_string_table(1, frame.into_raw());
+    let out = self.machine.call(out, args)?;
     panic!("{:#?}", out);
 
     // let table = self.machine.call_file(file, &format!("{}.lua", file))?;
@@ -517,6 +512,51 @@ impl Telua {
     // table.insert_string_table(1, frame);
     // let out = self.machine.call(function, table)?;
     // panic!("{:#?}", out);
+  }
+  pub fn new_frame(&mut self, args: HashMap<String, String>, proto: Proto, parent: Option<&Frame>) -> TeluaResult<Frame> {
+    let mut table = LuaTable::<LuaString>::default();
+    for arg in args {
+      if let Some(tid) = proto.0.get(&arg.0) {
+        match tid {
+          TypeId::Bool => table.insert_bool(arg.0, arg.1 == "true"),
+          TypeId::Float => table.insert_float(arg.0, arg.1.parse::<f32>().unwrap()),
+          TypeId::Integer => table.insert_integer(arg.0, arg.1.parse::<i32>().unwrap()),
+          TypeId::String => table.insert_string(arg.0, &arg.1),
+        }
+      } else {
+        table.insert_string(arg.0, &arg.1)
+      }
+    }
+    if let Some(frame) = parent {
+      let lambda = self.libs.get("mw.frame").unwrap().get_function("getParentFrame").unwrap();
+      Ok(frame.child(table, lambda))
+    } else {
+      Ok(Frame::new(table))
+    }
+  }
+}
+
+#[derive(Clone)]
+pub struct Frame(LuaTable<LuaString>);
+impl Frame {
+  pub fn new(args: LuaTable<LuaString>) -> Self {
+    let mut table = LuaTable::default();
+    table.insert_string_table("args", args);
+    Self(table)
+  }
+  pub fn child(&self, args: LuaTable<LuaString>, lambda: LuaChunk) -> Self {
+    let mut child = Self::new(args);
+    child.0.insert_string_table("parent", self.0.clone());
+    child.0.insert_chunk("getParent", lambda);
+    child
+  }
+  pub fn into_raw(self) -> LuaTable<LuaString> {
+    self.into()
+  }
+}
+impl From<Frame> for LuaTable<LuaString> {
+  fn from(src: Frame) -> Self {
+    src.0
   }
 }
 
