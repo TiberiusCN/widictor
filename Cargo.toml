@@ -2,11 +2,5 @@
 members = [
   "widictor",
   "scribunto",
-  #"templates/noun",
-  #"templates/verb",
-  #"templates/derived",
-  #"database",
-  #"template",
   "remote",
-  #"core",
 ]
