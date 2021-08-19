@@ -1,6 +1,6 @@
 #[allow(unused)]
 use crate::scribunto as m;
-use m::{LuaType, Parser, php_error::PhpError};
+use m::{php_error::PhpError, LuaType, Parser};
 
 use nom::IResult;
 use std::fmt::Display;
@@ -17,8 +17,12 @@ impl LuaFloat {
     let (src, _) = Parser::finite(src)?;
     Ok((src, Self::from(val)))
   }
-  pub fn to_raw(self) -> f32 { self.0 }
-  pub fn as_raw(&self) -> &f32 { &self.0 }
+  pub fn to_raw(self) -> f32 {
+    self.0
+  }
+  pub fn as_raw(&self) -> &f32 {
+    &self.0
+  }
 }
 impl Display for LuaFloat {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

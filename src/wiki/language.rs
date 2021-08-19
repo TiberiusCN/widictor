@@ -1,8 +1,15 @@
 #[allow(unused)]
 use crate::wiki as m;
-use m::{wiki_error::WikiError, word_section::{Tree, WordSection}};
+use m::{
+  wiki_error::WikiError,
+  word_section::{Tree, WordSection},
+};
 
-use nom::{IResult, bytes::complete::{tag, take_while1}, sequence::delimited};
+use nom::{
+  bytes::complete::{tag, take_while1},
+  sequence::delimited,
+  IResult,
+};
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -20,11 +27,7 @@ impl Language<(), WordSection<()>> {
   pub fn parse(input: &str) -> IResult<&str, Self, WikiError<&str>> {
     let value = Self::language(input)?;
 
-    Ok((value.0, Self {
-      name: value.1.to_string(),
-      sections: vec![WordSection::empty()],
-      phantom: Default::default(),
-    }))
+    Ok((value.0, Self { name: value.1.to_string(), sections: vec![WordSection::empty()], phantom: Default::default() }))
   }
 }
 
@@ -39,7 +42,10 @@ impl<T> Language<T, WordSection<T>> {
       phantom: Default::default(),
     }
   }
-  pub fn try_convert<N, E, TtoN: FnMut(T) -> Result<N, E>>(self, mut conv: TtoN) -> Result<Language<N, WordSection<N>>, E> {
+  pub fn try_convert<N, E, TtoN: FnMut(T) -> Result<N, E>>(
+    self,
+    mut conv: TtoN,
+  ) -> Result<Language<N, WordSection<N>>, E> {
     Ok(Language {
       name: self.name,
       sections: self.sections.into_iter().map(|v| v.try_convert(&mut conv)).collect::<Result<_, E>>()?,
@@ -56,10 +62,9 @@ impl<T> Language<T, WordSection<T>> {
   pub fn subdivide(self) -> Vec<Language<T, Rc<WordSection<T>>>> {
     let name = self.name;
     let tree = self.sections.into_iter().filter(|s| s.name.species().is_some()).collect::<Tree<_>>();
-    tree.into_iter().map(|v| Language {
-      name: name.clone(),
-      sections: v.into_iter().collect(),
-      phantom: Default::default(),
-    }).collect()
+    tree
+      .into_iter()
+      .map(|v| Language { name: name.clone(), sections: v.into_iter().collect(), phantom: Default::default() })
+      .collect()
   }
 }

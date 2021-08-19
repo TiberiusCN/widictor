@@ -1,8 +1,8 @@
 #[allow(unused)]
 use crate::wiki as m;
-use m::{Text, wiki_error::WikiError};
+use m::{wiki_error::WikiError, Text};
 
-use nom::{IResult, bytes::complete::tag, sequence::delimited};
+use nom::{bytes::complete::tag, sequence::delimited, IResult};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -34,18 +34,10 @@ impl Template {
     Ok(tag("}}}")(src)?)
   }
   fn template(src: &str) -> IResult<&str, Vec<&str>, WikiError<&str>> {
-    Ok(delimited(
-      Self::open,
-      Self::template_parser(false),
-      Self::close
-    )(src)?)
+    Ok(delimited(Self::open, Self::template_parser(false), Self::close)(src)?)
   }
   fn defval(src: &str) -> IResult<&str, Vec<&str>, WikiError<&str>> {
-    Ok(delimited(
-      Self::def_open,
-      Self::template_parser(true),
-      Self::def_close
-    )(src)?)
+    Ok(delimited(Self::def_open, Self::template_parser(true), Self::def_close)(src)?)
   }
   fn arg(s: &str) -> IResult<&str, &str, WikiError<&str>> {
     let mut br = 0;
@@ -55,7 +47,7 @@ impl Template {
         '|' | '}' if br == 0 => break,
         '{' => br += 1,
         '}' => br -= 1,
-        _ => {},
+        _ => {}
       }
       length += c.len_utf8();
     }
@@ -109,10 +101,10 @@ impl Template {
       match name {
         ArgType::Auto => {
           unordered.push(value);
-        },
+        }
         ArgType::Force(name) => {
           params.insert(name.to_string(), value);
-        },
+        }
       }
     }
     let mut id = 0;
@@ -126,10 +118,9 @@ impl Template {
     }
     let header = params.remove("0").ok_or(WikiError::BadTemplate)?;
 
-    Ok((tail, Template {
-      com: header,
-      args: params.into_iter().map(|it| (it.0, (None, it.1))).collect(),
-      is_defval: defval,
-    }))
+    Ok((
+      tail,
+      Template { com: header, args: params.into_iter().map(|it| (it.0, (None, it.1))).collect(), is_defval: defval },
+    ))
   }
 }

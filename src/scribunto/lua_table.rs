@@ -1,12 +1,15 @@
 #[allow(unused)]
 use crate::scribunto as m;
-use m::{LuaFloat, LuaInteger, LuaNameType, LuaString, LuaType, Parser, lua_bool::LuaBool, lua_chunk::LuaChunk, lua_null::LuaNull, php_error::PhpError};
+use m::{
+  lua_bool::LuaBool, lua_chunk::LuaChunk, lua_null::LuaNull, php_error::PhpError, LuaFloat, LuaInteger, LuaNameType,
+  LuaString, LuaType, Parser,
+};
 
 use nom::IResult;
 use std::{collections::HashMap, fmt::Display};
 
 macro_rules! any {
-	($raw: ty, $kind: expr, $pkind: path, $asraw: ident) => {
+  ($raw: ty, $kind: expr, $pkind: path, $asraw: ident) => {
     impl From<$raw> for AnyLua {
       fn from(me: $raw) -> Self {
         $kind(me)
@@ -20,7 +23,7 @@ macro_rules! any {
         }
       }
     }
-	};
+  };
 }
 
 #[derive(Debug, Clone)]
@@ -151,7 +154,9 @@ impl<T: LuaNameType> Display for LuaTable<T> {
     let mut i = self.value.iter().peekable();
     while let Some((name, val)) = i.next() {
       write!(f, "[{}]={}", name, val)?;
-      if i.peek().is_some() { f.write_str(",")?; }
+      if i.peek().is_some() {
+        f.write_str(",")?;
+      }
     }
     f.write_str("}")
   }
@@ -172,7 +177,7 @@ impl<T: LuaNameType> LuaTable<T> {
         let (tmp, _) = Parser::separator(tmp)?;
         src = tmp;
         Some(val)
-      },
+      }
       s => return Err(PhpError::UnexpectedPrefix("a/O", s.to_string()).into()),
     };
     let (src, pairs) = Parser::usize_val(src)?;
@@ -193,10 +198,7 @@ impl<T: LuaNameType> LuaTable<T> {
       }
     }
     let (src, _) = Parser::close(src)?;
-    Ok((src, Self {
-      value: fields,
-      object,
-    }))
+    Ok((src, Self { value: fields, object }))
   }
 }
 impl From<&LuaTable<LuaInteger>> for LuaTable<LuaString> {

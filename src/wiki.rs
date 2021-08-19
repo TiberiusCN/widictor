@@ -1,15 +1,18 @@
-use std::{collections::{HashMap, HashSet}, rc::Rc};
-use language::Language;
 use crate::{remote, scribunto::*};
+use language::Language;
+use std::{
+  collections::{HashMap, HashSet},
+  rc::Rc,
+};
 use text::Text;
 use word_section::WordSection;
 
-pub(crate) mod substr;
-mod section;
-mod word_section;
-mod wiki_error;
 mod language;
+mod section;
+pub(crate) mod substr;
 mod text;
+mod wiki_error;
+mod word_section;
 
 lazy_static::lazy_static! {
   static ref TEMPLATES: HashMap<String, std::path::PathBuf> = {
@@ -44,13 +47,21 @@ enum AnyParse<'a> {
 }
 impl<'a> AnyParse<'a> {
   fn parse(input: &'a str) -> Self {
-    if let Ok(r) = Language::parse(input).map(|v| v.1).map(Self::Language) { r }
-    else if let Ok(r) = WordSection::parse(input).map(|v| v.1).map(Self::Section) { r }
-    else { Self::Content(input) }
+    if let Ok(r) = Language::parse(input).map(|v| v.1).map(Self::Language) {
+      r
+    } else if let Ok(r) = WordSection::parse(input).map(|v| v.1).map(Self::Section) {
+      r
+    } else {
+      Self::Content(input)
+    }
   }
 }
 
-fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Result<Vec<Language<String, Rc<WordSection<String>>>>, ()> {
+fn parse_page(
+  page: &str,
+  language: &str,
+  subwords: &mut HashSet<String>,
+) -> Result<Vec<Language<String, Rc<WordSection<String>>>>, ()> {
   let mut iter = page.lines();
   let mut lang = {
     let iter = &mut iter;
@@ -58,14 +69,15 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
       while let Some(line) = iter.next() {
         match Language::parse(line) {
           Ok(lang) if lang.1.name == language => return Ok(lang.1),
-          Ok(_) => {},
+          Ok(_) => {}
           Err(nom::Err::Error(e)) if !e.filtered() => return Err(()),
-          Err(_) => {},
+          Err(_) => {}
         }
       }
       Err(())
     })()?
-  }.convert(|_| unreachable!());
+  }
+  .convert(|_| unreachable!());
   for line in iter {
     let any = AnyParse::parse(line);
     match any {
@@ -113,7 +125,9 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
     fn convert_text(text: Vec<Text>, subwords: &mut HashSet<String>, telua: &mut Telua, frame: &Frame) -> String {
       let mut out = String::new();
       for text in text {
-        if !out.is_empty() { out += " "; }
+        if !out.is_empty() {
+          out += " ";
+        }
         match text {
           Text::Raw(raw) => out += raw.as_str(),
           Text::Tab(tab) => {
@@ -122,7 +136,8 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
             }
           }
           Text::Template(template) => {
-            let args: HashMap<String, String> = template.args.into_iter().map(|it| (it.0, convert_text(it.1.1, subwords, telua, frame))).collect(); // ??? TODO
+            let args: HashMap<String, String> =
+              template.args.into_iter().map(|it| (it.0, convert_text(it.1 .1, subwords, telua, frame))).collect(); // ??? TODO
             let mut com = template.com;
             if matches!(com[0], Text::Tab(1)) {
               com[0] = Text::Raw("#".to_string());
@@ -134,9 +149,12 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
                 let module = i.next().unwrap();
                 let function = i.next().unwrap();
                 println!("\x1b[32mM:{}\x1b[0m", module);
-                let proto: Proto = serde_json::from_reader(std::fs::File::open(format!("/tmp/widictor/modules/{}.proto", &module)).unwrap()).unwrap();
+                let proto: Proto = serde_json::from_reader(
+                  std::fs::File::open(format!("/tmp/widictor/modules/{}.proto", &module)).unwrap(),
+                )
+                .unwrap();
                 let frame = telua.new_frame(args, proto, Some(&frame)).unwrap();
-                let module = telua.call(&module, &function, frame).unwrap();
+                let _module = telua.call(&module, &function, frame).unwrap();
                 //out += format!("{{MODULE: {:#?}}}", module).as_str();
                 //panic!("{}", out);
               } else {
@@ -177,7 +195,7 @@ fn parse_page(page: &str, language: &str, subwords: &mut HashSet<String>) -> Res
     let frame = telua.new_frame(Default::default(), Default::default(), None).unwrap();
     convert_text(text, subwords, &mut telua, &frame)
   };
-    
+
   let lang = lang.convert(converter);
   Ok(lang.subdivide())
 }
@@ -188,7 +206,15 @@ pub struct Telua {
 }
 type TeluaError = Box<dyn std::error::Error>;
 type TeluaResult<T> = Result<T, TeluaError>;
-type ApiMap = HashMap<&'static str, Box<dyn Fn(&mut LuaInstance<std::process::ChildStdout, std::process::ChildStdin>, LuaTable<LuaInteger>) -> LuaTable<LuaInteger>>>;
+type ApiMap = HashMap<
+  &'static str,
+  Box<
+    dyn Fn(
+      &mut LuaInstance<std::process::ChildStdout, std::process::ChildStdin>,
+      LuaTable<LuaInteger>,
+    ) -> LuaTable<LuaInteger>,
+  >,
+>;
 impl Telua {
   fn empty() -> TeluaResult<Self> {
     let machine = LuaInstance::new(
@@ -196,11 +222,7 @@ impl Telua {
       "pkg",
       0,
       4,
-      vec![
-        "pkg".to_owned(),
-        "pkg/ustring".to_owned(),
-        "/tmp/widictor/modules".to_owned(),
-      ],
+      vec!["pkg".to_owned(), "pkg/ustring".to_owned(), "/tmp/widictor/modules".to_owned()],
     )?;
     Ok(Self { machine, libs: Default::default() })
   }
@@ -228,55 +250,60 @@ impl Telua {
   }
   fn mw_interface_2(&mut self) -> TeluaResult<()> {
     let mut api = ApiMap::new();
-    api.insert("loadPackage", Box::new(|instance, args| {
-      let file_id = args.get_string(1).unwrap().as_raw().to_owned();
-      let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
-        format!("{}.lua", file_id)
-      } else {
-        let file_id = match file_id.as_str() {
-          "ustring" => "ustring/ustring",
-          u => u,
+    api.insert(
+      "loadPackage",
+      Box::new(|instance, args| {
+        let file_id = args.get_string(1).unwrap().as_raw().to_owned();
+        let file = if let Some(file_id) = file_id.strip_prefix("Module:") {
+          format!("{}.lua", file_id)
+        } else {
+          let file_id = match file_id.as_str() {
+            "ustring" => "ustring/ustring",
+            u => u,
+          };
+          format!("{}.lua", file_id)
         };
-        format!("{}.lua", file_id)
-      };
-      println!("req: \x1b[31m{}\x1b[0m", file);
-      let chunk = instance.load_file(&file_id, &file).unwrap();
-      let mut out = LuaTable::default();
-      out.insert_chunk(1, chunk);
-      out
-    }));
-    api.insert("loadPHPLibrary", Box::new(|instance, args| {
-      let file_id = args.get_string(1).unwrap().as_raw().to_owned();
-      let file = if let Some(id) = file_id.strip_prefix("Module:") {
-        id.to_owned()
-      } else {
-        file_id
-      };
-      println!("reqphp: \x1b[33m{}\x1b[0m", file);
-      let api = instance.call_file(&file, &format!("{}.lua", &file)).unwrap();
-      let api = if let Some(mut api) = api.get_string_table(1) {
-        let mut old_api = Default::default();
-        std::mem::swap(&mut api.value, &mut old_api);
-        api.value = old_api.into_iter().map(|(name, val)| {
-          if let Some(val) = val.as_string_table() {
-            if let Some(id) = val.object.as_ref() {
-              if id == "Scribunto_LuaStandaloneInterpreterFunction" {
-                let f = val.get_integer("id").unwrap();
-                return (name, Box::new(f.to_chunk().into()));
+        println!("req: \x1b[31m{}\x1b[0m", file);
+        let chunk = instance.load_file(&file_id, &file).unwrap();
+        let mut out = LuaTable::default();
+        out.insert_chunk(1, chunk);
+        out
+      }),
+    );
+    api.insert(
+      "loadPHPLibrary",
+      Box::new(|instance, args| {
+        let file_id = args.get_string(1).unwrap().as_raw().to_owned();
+        let file = if let Some(id) = file_id.strip_prefix("Module:") { id.to_owned() } else { file_id };
+        println!("reqphp: \x1b[33m{}\x1b[0m", file);
+        let api = instance.call_file(&file, &format!("{}.lua", &file)).unwrap();
+        let api = if let Some(mut api) = api.get_string_table(1) {
+          let mut old_api = Default::default();
+          std::mem::swap(&mut api.value, &mut old_api);
+          api.value = old_api
+            .into_iter()
+            .map(|(name, val)| {
+              if let Some(val) = val.as_string_table() {
+                if let Some(id) = val.object.as_ref() {
+                  if id == "Scribunto_LuaStandaloneInterpreterFunction" {
+                    let f = val.get_integer("id").unwrap();
+                    return (name, Box::new(f.to_chunk().into()));
+                  }
+                }
               }
-            }
-          }
-          (name, val)
-        }).collect();
+              (name, val)
+            })
+            .collect();
 
-        let mut wrap = LuaTable::default();
-        wrap.insert_string_table(1, api);
-        wrap
-      } else {
+          let mut wrap = LuaTable::default();
+          wrap.insert_string_table(1, api);
+          wrap
+        } else {
+          api
+        };
         api
-      };
-      api
-    }));
+      }),
+    );
     api.insert("frameExists", Box::new(|_, _| todo!()));
     api.insert("newChildFrame", Box::new(|_, _| todo!()));
     api.insert("getExpandedArgument", Box::new(|_, _| todo!()));
@@ -319,11 +346,14 @@ impl Telua {
   }
   fn mw_interface_6(&mut self) -> TeluaResult<()> {
     let mut api = ApiMap::new();
-    api.insert("getContLangCode", Box::new(|_, _| {
-      let mut ret = LuaTable::default();
-      ret.insert_string(1, "la");
-      ret
-    }));
+    api.insert(
+      "getContLangCode",
+      Box::new(|_, _| {
+        let mut ret = LuaTable::default();
+        ret.insert_string(1, "la");
+        ret
+      }),
+    );
     api.insert("isSupportedLanguage", Box::new(|_, _| todo!()));
     api.insert("isKnownLanguageTag", Box::new(|_, _| todo!()));
     api.insert("isValidCode", Box::new(|_, _| todo!()));
@@ -419,20 +449,17 @@ impl Telua {
         ("scriptPath", ""),
         ("stylePath", ""),
         ("current_version", env!("CARGO_PKG_VERSION")),
-      ].iter().for_each(|f| it.insert_string(f.0, f.1));
+      ]
+      .iter()
+      .for_each(|f| it.insert_string(f.0, f.1));
       it.insert_integer_table("namespaces", LuaTable::default());
-      let stats = [
-        ("pages", 1),
-        ("articles", 0),
-        ("files", 0),
-        ("edits", 0),
-        ("users", 1),
-        ("activeUsers", 1),
-        ("admins", 1),
-      ].iter().fold(LuaTable::default(), |mut acc, it| {
-        acc.insert_integer(it.0, it.1);
-        acc
-      });
+      let stats =
+        [("pages", 1), ("articles", 0), ("files", 0), ("edits", 0), ("users", 1), ("activeUsers", 1), ("admins", 1)]
+          .iter()
+          .fold(LuaTable::default(), |mut acc, it| {
+            acc.insert_integer(it.0, it.1);
+            acc
+          });
       it.insert_string_table("stats", stats);
     })?;
     machine.mw_interface_4()?;
@@ -445,9 +472,11 @@ impl Telua {
     machine.mw_interface_6()?;
     machine.setup_interface("mw.language", |_| {})?;
     machine.mw_interface_7()?;
-    machine.setup_interface("mw.message", |it| {
-      it.insert_string("lang", "la");
-    }).unwrap();
+    machine
+      .setup_interface("mw.message", |it| {
+        it.insert_string("lang", "la");
+      })
+      .unwrap();
     machine.mw_interface_8()?;
     machine.setup_interface("mw.title", |it| {
       let mut this_title = LuaTable::default();
@@ -505,7 +534,12 @@ impl Telua {
     // let out = self.machine.call(function, table)?;
     // panic!("{:#?}", out);
   }
-  pub fn new_frame(&mut self, args: HashMap<String, String>, proto: Proto, parent: Option<&Frame>) -> TeluaResult<Frame> {
+  pub fn new_frame(
+    &mut self,
+    args: HashMap<String, String>,
+    proto: Proto,
+    parent: Option<&Frame>,
+  ) -> TeluaResult<Frame> {
     let mut table = LuaTable::<LuaString>::default();
     for arg in args {
       if let Some(tid) = proto.0.get(&arg.0) {
@@ -569,14 +603,14 @@ fn clean_raw(src: String) -> String {
         match tag.as_str() {
           "noinclude" => noinclude = true,
           "/noinclude" => noinclude = false,
-          com if com.starts_with("!--") => {},
+          com if com.starts_with("!--") => {}
           _ => log::warn!("unknown tag: {}", tag),
         }
         tag.clear();
         opened = false
-      },
+      }
       s if opened => tag.push(s),
-      _ if noinclude => {},
+      _ if noinclude => {}
       s => out.push(s),
     }
   }

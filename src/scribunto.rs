@@ -6,17 +6,27 @@ pub use lua_null::LuaNull;
 pub use lua_string::LuaString;
 pub use lua_table::AnyLua;
 pub use lua_table::LuaTable;
-use nom::{IResult, bytes::complete::{tag, take_while1}};
-use std::{collections::HashMap, fmt::Display, io::{Read, Write}, path::PathBuf, process::{ChildStdin, ChildStdout}, sync::Arc};
+use nom::{
+  bytes::complete::{tag, take_while1},
+  IResult,
+};
+use std::{
+  collections::HashMap,
+  fmt::Display,
+  io::{Read, Write},
+  path::PathBuf,
+  process::{ChildStdin, ChildStdout},
+  sync::Arc,
+};
 
-mod php_error;
-mod lua_string;
-mod lua_integer;
-mod lua_float;
-mod lua_table;
 mod lua_bool;
-mod lua_null;
 mod lua_chunk;
+mod lua_float;
+mod lua_integer;
+mod lua_null;
+mod lua_string;
+mod lua_table;
+mod php_error;
 use php_error::PhpError;
 
 #[macro_export]
@@ -45,9 +55,7 @@ pub struct LuaSender<W: Write> {
 }
 impl<W: Write> From<W> for LuaSender<W> {
   fn from(writer: W) -> Self {
-    Self {
-      writer,
-    }
+    Self { writer }
   }
 }
 impl<W: Write> LuaSender<W> {
@@ -65,9 +73,7 @@ pub struct LuaReceiver<R: Read> {
 }
 impl<R: Read> From<R> for LuaReceiver<R> {
   fn from(reader: R) -> Self {
-    Self {
-      reader,
-    }
+    Self { reader }
   }
 }
 enum LuaResult {
@@ -95,11 +101,7 @@ impl<R: Read> LuaReceiver<R> {
     };
     self.reader.read_exact(&mut buf)?;
     let table = std::str::from_utf8(buf.as_slice())?;
-    let table = table
-      .replace("\\\\", "\\")
-      .replace("\\r", "\n")
-      .replace("\\\"", "\"")
-      .replace("\\n", "\r");
+    let table = table.replace("\\\\", "\\").replace("\\r", "\n").replace("\\\"", "\"").replace("\\n", "\r");
     let (tail, table): (&str, LuaTable<LuaString>) = LuaTable::parse(&table).unwrap();
     assert!(tail.is_empty());
     let op = table.get_string("op").unwrap();
@@ -109,11 +111,11 @@ impl<R: Read> LuaReceiver<R> {
         let nvalues = table.get_integer("nvalues").unwrap();
         assert_eq!(*nvalues.as_raw(), values.len() as i32);
         Ok(LuaResult::Ret(values.clone()))
-      },
+      }
       "error" => {
         let err = table.get_string("value").unwrap();
         Err(Box::new(PhpError::<&str>::Lua(err.as_raw().to_owned()).into_nom()))
-      },
+      }
       "call" => {
         let args = table.get_integer_table("args").unwrap();
         let nargs = table.get_integer("nargs").unwrap();
@@ -162,7 +164,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
       LuaResult::Ret(ret) => {
         println!("ret");
         Ok(ret)
-      },
+      }
       LuaResult::Call(id, args) => {
         println!("call {}", id);
         if let Some(l) = self.library.get(&id) {
@@ -181,7 +183,11 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     let includes = includes.into_iter().map(Into::into).collect();
     Self { input, output, includes, library: HashMap::new() }
   }
-  pub fn insert_callback(&mut self, op: &str, lambda: Box<dyn Fn(&mut LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaInteger>>) {
+  pub fn insert_callback(
+    &mut self,
+    op: &str,
+    lambda: Box<dyn Fn(&mut LuaInstance<R, W>, LuaTable<LuaInteger>) -> LuaTable<LuaInteger>>,
+  ) {
     self.library.insert(op.into(), Arc::new(lambda));
   }
   pub fn get_status(&mut self) -> Result<RGetStatus, Box<dyn std::error::Error>> {
@@ -196,10 +202,7 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     })
   }
   pub fn load_string(&mut self, name: &str, text: &str) -> Result<LuaChunk, Box<dyn std::error::Error>> {
-    let text = text.replace("\\", "\\\\")
-      .replace("\n", "\\n")
-      .replace("\r", "\\r")
-      .replace("\"", "\\\"");
+    let text = text.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\"", "\\\"");
     self.output.encode(ToLuaMessage::LoadString { text: text.into(), name: name.into() })?;
     let r = self.input.decode()?;
     let r = self.decode_ack(r)?;
@@ -230,22 +233,27 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
     let data = self.call(id, Default::default())?;
     Ok(data)
   }
-  pub fn call(&mut self, id: LuaChunk, args: LuaTable<LuaInteger>) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
+  pub fn call(
+    &mut self,
+    id: LuaChunk,
+    args: LuaTable<LuaInteger>,
+  ) -> Result<LuaTable<LuaInteger>, Box<dyn std::error::Error>> {
     println!("call({})", id);
     self.output.encode(ToLuaMessage::Call { id: id.to_integer(), args })?;
     let r = self.input.decode()?;
     self.decode_ack(r)
   }
-  pub fn register_library(&mut self, name: &str, functions: LuaTable<LuaString>) -> Result<RRegisterLibrary, Box<dyn std::error::Error>> {
+  pub fn register_library(
+    &mut self,
+    name: &str,
+    functions: LuaTable<LuaString>,
+  ) -> Result<RRegisterLibrary, Box<dyn std::error::Error>> {
     self.output.encode(ToLuaMessage::RegisterLibrary { name: name.into(), functions })?;
     let _ = self.input.decode()?;
     Ok(RRegisterLibrary {})
   }
   pub fn cleanup_chunks(&mut self, owned: Vec<LuaChunk>) -> Result<RCleanupChunks, Box<dyn std::error::Error>> {
-    let mut ids = LuaTable {
-      value: Default::default(),
-      object: None,
-    };
+    let mut ids = LuaTable { value: Default::default(), object: None };
     for id in owned.into_iter() {
       ids.insert_bool(*id.as_raw(), true);
     }
@@ -263,7 +271,13 @@ impl<R: Read, W: Write> LuaInstance<R, W> {
   }
 }
 impl LuaInstance<ChildStdout, ChildStdin> {
-  pub fn new(main: &str, includes: &str, interpreter_id: usize, int_size: usize, paths: Vec<String>) -> Result<Self, std::io::Error> {
+  pub fn new(
+    main: &str,
+    includes: &str,
+    interpreter_id: usize,
+    int_size: usize,
+    paths: Vec<String>,
+  ) -> Result<Self, std::io::Error> {
     let path = paths.iter().fold("?.lua".to_owned(), |acc, it| format!("{};{}/?.lua", acc, it));
     let mut proc = std::process::Command::new("lua5.1")
       .arg(main)
@@ -314,18 +328,21 @@ impl Parser {
     Ok((src, val))
   }
   fn f32_val(src: &str) -> IResult<&str, f32, PhpError<&str>> {
-    tag::<_, _, PhpError<&str>>("INF")(src).map(|(src, _): (&str, &str)| (src, f32::INFINITY))
+    tag::<_, _, PhpError<&str>>("INF")(src)
+      .map(|(src, _): (&str, &str)| (src, f32::INFINITY))
       .or_else(|_| tag::<_, _, PhpError<&str>>("-INF")(src).map(|(src, _)| (src, f32::NEG_INFINITY)))
       .or_else(|_| tag::<_, _, PhpError<&str>>("NAN")(src).map(|(src, _)| (src, f32::NAN)))
       .or_else(|_| {
-        let (src, val) = take_while1(|s: char| s.is_numeric() || s == '-' || s ==',' || s == '.')(src)?;
+        let (src, val) = take_while1(|s: char| s.is_numeric() || s == '-' || s == ',' || s == '.')(src)?;
         let val: f32 = val.replace(',', ".").parse().map_err(PhpError::from)?;
         Ok((src, val))
       })
   }
   fn str_val(src: &str, len: usize) -> IResult<&str, String, PhpError<&str>> {
     let (src, _) = tag("\"")(src)?;
-    if src.len() < len { return Err(PhpError::BadLength(len as _, src.len() as _).into()); }
+    if src.len() < len {
+      return Err(PhpError::BadLength(len as _, src.len() as _).into());
+    }
     let out = &src[0..len].to_owned();
     let src = &src[len..];
     let (src, _) = tag("\"")(src)?;
@@ -354,7 +371,8 @@ impl Parser {
     tag(";")(src).map(|(src, _)| (src, ()))
   }
   fn any_lua(src: &str) -> IResult<&str, AnyLua, PhpError<&str>> {
-    LuaString::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) })
+    LuaString::parse(src)
+      .map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) })
       .or_else(|_| LuaBool::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) }))
       .or_else(|_| LuaNull::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) }))
       .or_else(|_| LuaInteger::parse(src).map(|(a, b)| -> (&str, AnyLua) { (a, b.into()) }))
@@ -428,7 +446,7 @@ impl From<ToLuaMessage> for LuaTable<LuaString> {
       ToLuaMessage::Failure { value } => {
         t.insert_string("op", "error");
         t.insert_string("value", value);
-      },
+      }
     }
     t
   }
@@ -472,7 +490,8 @@ fn test() {
   assert_eq!(bool::from(val), true);
   let (last, _) = LuaNull::parse(r"N;").unwrap();
   assert!(last.is_empty());
-  let (last, val): (_, LuaTable<LuaInteger>) = LuaTable::parse(r#"a:4:{i:0;b:1;i:1;N;i:2;d:-421000000;i:3;s:6:"A to Z";}"#).unwrap();
+  let (last, val): (_, LuaTable<LuaInteger>) =
+    LuaTable::parse(r#"a:4:{i:0;b:1;i:1;N;i:2;d:-421000000;i:3;s:6:"A to Z";}"#).unwrap();
   assert!(last.is_empty());
   assert!(val.object.is_none());
   {
@@ -481,17 +500,19 @@ fn test() {
     assert_eq!(f32::from(val.get_float(2).unwrap()), -421000000.0);
     assert_eq!(val.get_string(3).unwrap().as_ref(), "A to Z");
   }
-  let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"a:2:{i:42;b:1;s:6:"A to Z";a:3:{i:0;i:1;i:1;i:2;i:2;i:3;}}"#).unwrap();
+  let (last, val): (_, LuaTable<LuaString>) =
+    LuaTable::parse(r#"a:2:{i:42;b:1;s:6:"A to Z";a:3:{i:0;i:1;i:1;i:2;i:2;i:3;}}"#).unwrap();
   assert!(last.is_empty());
   assert!(val.object.is_none());
   {
     assert_eq!(bool::from(val.get_bool("42").unwrap()), true);
     let val = val.get_integer_table("A to Z").unwrap();
     for i in 0..=2 {
-      assert_eq!(i32::from(val.get_integer(i).unwrap()), i+1);
+      assert_eq!(i32::from(val.get_integer(i).unwrap()), i + 1);
     }
   }
-  let (last, val): (_, LuaTable<LuaString>) = LuaTable::parse(r#"O:8:"stdClass":2:{s:4:"John";d:3.14;s:4:"Jane";d:2.718;}"#).unwrap();
+  let (last, val): (_, LuaTable<LuaString>) =
+    LuaTable::parse(r#"O:8:"stdClass":2:{s:4:"John";d:3.14;s:4:"Jane";d:2.718;}"#).unwrap();
   assert!(last.is_empty());
   assert!(val.object.as_ref().map(|v| String::from(v.clone())) == Some("stdClass".to_owned()));
   {

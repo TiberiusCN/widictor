@@ -13,7 +13,7 @@ pub enum WikiError<I> {
 }
 
 impl<I> ParseError<I> for WikiError<I> {
-  fn from_error_kind(input: I, kind: ErrorKind) ->  Self {
+  fn from_error_kind(input: I, kind: ErrorKind) -> Self {
     Self::Nom(input, kind)
   }
 

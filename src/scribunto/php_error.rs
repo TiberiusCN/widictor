@@ -2,7 +2,10 @@
 use crate::scribunto as m;
 
 use nom::error::{ErrorKind, ParseError};
-use std::{fmt::{Debug, Display}, num::{ParseFloatError, ParseIntError}};
+use std::{
+  fmt::{Debug, Display},
+  num::{ParseFloatError, ParseIntError},
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum PhpError<I: Display + Debug> {
@@ -39,7 +42,7 @@ impl<I: Display + Debug> From<ParseFloatError> for PhpError<I> {
   }
 }
 impl<I: Display + Debug> ParseError<I> for PhpError<I> {
-  fn from_error_kind(input: I, kind: ErrorKind) ->  Self {
+  fn from_error_kind(input: I, kind: ErrorKind) -> Self {
     Self::Nom(input, kind)
   }
 

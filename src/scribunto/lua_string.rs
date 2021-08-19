@@ -1,6 +1,6 @@
 #[allow(unused)]
 use crate::scribunto as m;
-use m::{LuaInteger, LuaNameType, LuaType, Parser, php_error::PhpError};
+use m::{php_error::PhpError, LuaInteger, LuaNameType, LuaType, Parser};
 
 use nom::IResult;
 use std::fmt::Display;
@@ -19,8 +19,12 @@ impl LuaString {
     let (src, _) = Parser::finite(src)?;
     Ok((src, Self::from(val)))
   }
-  pub fn to_raw(self) -> String { self.0 }
-  pub fn as_raw(&self) -> &str { self.0.as_str() }
+  pub fn to_raw(self) -> String {
+    self.0
+  }
+  pub fn as_raw(&self) -> &str {
+    self.0.as_str()
+  }
 }
 impl<T: Into<String>> From<T> for LuaString {
   fn from(src: T) -> Self {

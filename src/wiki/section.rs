@@ -26,7 +26,7 @@ pub enum Section {
   Contraction,
   Inflection,
   Compounds,
-  
+
   Conjunction,
   Noun,
   Verb,
@@ -49,7 +49,18 @@ impl Default for Section {
 impl Section {
   pub(crate) fn species(&self) -> Option<usize> {
     Some(match self {
-      Self::Compounds | Self::Conjunction | Self::Noun | Self::Verb | Self::Adjective | Self::Participle | Self::Preposition | Self::Pronoun | Self::Interjection | Self::Adverb | Self::Numeral | Self::Particle => 0,
+      Self::Compounds
+      | Self::Conjunction
+      | Self::Noun
+      | Self::Verb
+      | Self::Adjective
+      | Self::Participle
+      | Self::Preposition
+      | Self::Pronoun
+      | Self::Interjection
+      | Self::Adverb
+      | Self::Numeral
+      | Self::Particle => 0,
       Self::Declension | Self::Conjugation | Self::Inflection => 1,
       Self::DerivedTerms => 2,
       Self::RelatedTerms => 3,
@@ -60,7 +71,16 @@ impl Section {
       Self::Synonyms => 8,
       Self::Antonyms => 9,
 
-      Self::Null | Self::Unknown | Self::SeeAlso | Self::Anagrams | Self::Translations | Self::References | Self::FurtherReading | Self::AlternativeForms | Self::Determiner | Self::Contraction => return None,
+      Self::Null
+      | Self::Unknown
+      | Self::SeeAlso
+      | Self::Anagrams
+      | Self::Translations
+      | Self::References
+      | Self::FurtherReading
+      | Self::AlternativeForms
+      | Self::Determiner
+      | Self::Contraction => return None,
     })
   }
 
@@ -122,7 +142,6 @@ impl From<&str> for Section {
       ("Contraction", Section::Contraction),
       ("Inflection", Section::Inflection),
       ("Compounds", Section::Compounds),
-
       ("Noun", Section::Noun),
       ("Proper noun", Section::Noun),
       ("Verb", Section::Verb),
@@ -134,11 +153,13 @@ impl From<&str> for Section {
       ("Adverb", Section::Adverb),
       ("Numeral", Section::Numeral),
       ("Particle", Section::Particle),
-    ].iter().map(|(template, value)|
-      move |test: &str| if test.starts_with(template) { Some(value.clone()) } else { None }
-    );
+    ]
+    .iter()
+    .map(|(template, value)| move |test: &str| if test.starts_with(template) { Some(value.clone()) } else { None });
     while let Some(l) = list.next() {
-      if let Some(value) = l(value) { return value; }
+      if let Some(value) = l(value) {
+        return value;
+      }
     }
     Self::Unknown
   }

@@ -2,7 +2,13 @@
 use crate::wiki as m;
 use m::{section::Section, wiki_error::WikiError};
 
-use nom::{IResult, branch::alt, bytes::complete::{tag, take_while1}, combinator::map, sequence::delimited};
+use nom::{
+  branch::alt,
+  bytes::complete::{tag, take_while1},
+  combinator::map,
+  sequence::delimited,
+  IResult,
+};
 use std::{iter::FromIterator, rc::Rc};
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -35,38 +41,28 @@ impl WordSection<()> {
     Ok(alt((
       map(Self::word_section1, |s: &str| -> (&str, usize) { (s, 1) }),
       map(Self::word_section2, |s: &str| -> (&str, usize) { (s, 2) }),
-      map(Self::word_section3, |s: &str| -> (&str, usize) { (s, 3) })
+      map(Self::word_section3, |s: &str| -> (&str, usize) { (s, 3) }),
     ))(src)?)
   }
   pub fn parse(input: &str) -> IResult<(), Self, WikiError<&str>> {
     let value = Self::word_section(input)?;
     let tail = value.0;
-    if !tail.is_empty() { return Err(WikiError::UnexpectedTail(tail).into()); }
+    if !tail.is_empty() {
+      return Err(WikiError::UnexpectedTail(tail).into());
+    }
     let (value, level) = value.1;
     let section = Section::from(value);
 
-    Ok(((), Self {
-      name: section,
-      level: level - 1,
-      children: Vec::new(),
-    }))
+    Ok(((), Self { name: section, level: level - 1, children: Vec::new() }))
   }
 }
 
 impl<T> WordSection<T> {
   pub fn fold_convert<N, TtoN: FnMut(Vec<N>, T) -> Vec<N>>(self, mut conv: TtoN) -> WordSection<N> {
-    WordSection {
-      name: self.name,
-      level: self.level,
-      children: self.children.into_iter().fold(Vec::new(), &mut conv),
-    }
+    WordSection { name: self.name, level: self.level, children: self.children.into_iter().fold(Vec::new(), &mut conv) }
   }
   pub fn convert<N, TtoN: FnMut(T) -> N>(self, mut conv: TtoN) -> WordSection<N> {
-    WordSection {
-      name: self.name,
-      level: self.level,
-      children: self.children.into_iter().map(&mut conv).collect(),
-    }
+    WordSection { name: self.name, level: self.level, children: self.children.into_iter().map(&mut conv).collect() }
   }
   pub fn try_convert<N, E, TtoN: FnMut(T) -> Result<N, E>>(self, mut conv: TtoN) -> Result<WordSection<N>, E> {
     Ok(WordSection {
@@ -76,11 +72,7 @@ impl<T> WordSection<T> {
     })
   }
   pub fn empty() -> Self {
-    Self {
-      name: Section::Null,
-      level: 0,
-      children: Vec::new(),
-    }
+    Self { name: Section::Null, level: 0, children: Vec::new() }
   }
 }
 
@@ -95,19 +87,24 @@ impl<T> Conflictable for WordSection<T> {
 fn test_conflict() {
   [
     "===Pronunciation===",
-      "====Noun 1====",
-        "=====Conjugation 1=====",
-      "====Noun 2====",
-      "====Verb====",
+    "====Noun 1====",
+    "=====Conjugation 1=====",
+    "====Noun 2====",
+    "====Verb====",
     "===Etymology===",
-  ].iter()
-    .map(|s| WordSection::parse(s).unwrap().1)
-    .collect::<Vec<_>>().as_slice().windows(2)
-    .zip([false, false, true, true, true, true].iter().copied())
-    .for_each(|(secs, conflict)| if secs[0].conflict(&secs[1]) != conflict {
+  ]
+  .iter()
+  .map(|s| WordSection::parse(s).unwrap().1)
+  .collect::<Vec<_>>()
+  .as_slice()
+  .windows(2)
+  .zip([false, false, true, true, true, true].iter().copied())
+  .for_each(|(secs, conflict)| {
+    if secs[0].conflict(&secs[1]) != conflict {
       let val = if conflict { "≠" } else { "=" };
       panic!("{:?} \x1b[31m{}\x1b[0m {:?}", secs[0], val, secs[1]);
-    });
+    }
+  });
 }
 
 #[cfg(test)]
@@ -122,9 +119,11 @@ fn test_parse_section() {
     ("====Noun==", None),
     ("===Noun====", None),
   ]
-    .iter()
-    .map(|(q, a)| (WordSection::parse(q).ok().map(|v| v.1), a.map(|a| WordSection { level: a.0, name: a.1, children: Vec::new() })))
-    .for_each(|(q, a)| assert_eq!(q, a));
+  .iter()
+  .map(|(q, a)| {
+    (WordSection::parse(q).ok().map(|v| v.1), a.map(|a| WordSection { level: a.0, name: a.1, children: Vec::new() }))
+  })
+  .for_each(|(q, a)| assert_eq!(q, a));
 }
 
 pub trait Conflictable {
@@ -181,7 +180,7 @@ impl<T: Conflictable> Seq<T> {
         } else {
           (self.insert(value), None)
         }
-      },
+      }
     }
   }
 }
@@ -189,7 +188,9 @@ impl<T: Conflictable> Seq<T> {
 pub struct Tree<T: Conflictable>(Vec<Rc<Seq<T>>>);
 
 impl<T: Conflictable> Default for Tree<T> {
-  fn default() -> Self { Self(Vec::new()) }
+  fn default() -> Self {
+    Self(Vec::new())
+  }
 }
 
 impl<T: Conflictable> Tree<T> {
@@ -221,21 +222,23 @@ impl<T: Conflictable> FromIterator<T> for Tree<T> {
 fn test_seq() {
   let tree = [
     "===Etymology 1===",
-     "====Pronunciation====",
-     "====Noun 1====",
-      "=====Conjugation=====",
-      "=====Synonyms=====", // Et Pr N C S
-     "====Noun 2====",
-      "=====Conjugation=====", // Et Pr N C
-     "====Verb====", // Et Pr V
+    "====Pronunciation====",
+    "====Noun 1====",
+    "=====Conjugation=====",
+    "=====Synonyms=====", // Et Pr N C S
+    "====Noun 2====",
+    "=====Conjugation=====", // Et Pr N C
+    "====Verb====",          // Et Pr V
     "===Etymology 2===",
-     "====Noun====", // Et N
-  ].iter()
-    .map(|s| WordSection::parse(s).unwrap().1)
-    .filter(|s| s.name.species().is_some())
-    .collect::<Tree<_>>();
+    "====Noun====", // Et N
+  ]
+  .iter()
+  .map(|s| WordSection::parse(s).unwrap().1)
+  .filter(|s| s.name.species().is_some())
+  .collect::<Tree<_>>();
 
-  let untree: Vec<(usize, Section)> = tree.into_iter().enumerate().flat_map(|(bid, branch)| branch.into_iter().map(move |v| (bid, v.name))).collect();
+  let untree: Vec<(usize, Section)> =
+    tree.into_iter().enumerate().flat_map(|(bid, branch)| branch.into_iter().map(move |v| (bid, v.name))).collect();
   let target = vec![
     (0, Section::Synonyms),
     (0, Section::Conjugation),
@@ -251,7 +254,7 @@ fn test_seq() {
     (2, Section::Etymology),
     (3, Section::Noun),
     (3, Section::Etymology),
-    ];
+  ];
   let mut template = target.into_iter();
   let mut got = untree.into_iter();
   loop {

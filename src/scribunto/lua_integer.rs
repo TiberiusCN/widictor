@@ -1,6 +1,6 @@
 #[allow(unused)]
 use crate::scribunto as m;
-use m::{LuaNameType, LuaString, LuaType, Parser, lua_chunk::LuaChunk, php_error::PhpError};
+use m::{lua_chunk::LuaChunk, php_error::PhpError, LuaNameType, LuaString, LuaType, Parser};
 
 use nom::IResult;
 use std::fmt::Display;
@@ -17,9 +17,15 @@ impl LuaInteger {
     let (src, _) = Parser::finite(src)?;
     Ok((src, Self::from(val)))
   }
-  pub fn to_raw(self) -> i32 { self.0 }
-  pub fn as_raw(&self) -> &i32 { &self.0 }
-  pub fn to_chunk(self) -> LuaChunk { LuaChunk::new(&self) }
+  pub fn to_raw(self) -> i32 {
+    self.0
+  }
+  pub fn as_raw(&self) -> &i32 {
+    &self.0
+  }
+  pub fn to_chunk(self) -> LuaChunk {
+    LuaChunk::new(&self)
+  }
 }
 impl Display for LuaInteger {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
