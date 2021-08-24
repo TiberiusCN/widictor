@@ -14,22 +14,6 @@ mod text;
 mod wiki_error;
 mod word_section;
 
-lazy_static::lazy_static! {
-  static ref TEMPLATES: HashMap<String, std::path::PathBuf> = {
-    let config_path = directories::ProjectDirs::from("com", "apqm", "widictor").unwrap().config_dir().join("templates.conf");
-    let x_dir = directories::BaseDirs::new().unwrap().executable_dir().unwrap().to_owned();
-    let f = std::fs::read_to_string(config_path).unwrap();
-    let mut hash = HashMap::new();
-    for p in f.lines() {
-      let mut  p = p.split('~');
-      if let (Some(template), Some(executable)) = (p.next(), p.next()) {
-        hash.insert(template.to_owned(), x_dir.join(executable));
-      }
-    }
-    hash
-  };
-}
-
 #[derive(serde::Deserialize)]
 pub enum TypeId {
   Bool,
@@ -263,7 +247,6 @@ impl Telua {
           };
           format!("{}.lua", file_id)
         };
-        println!("req: \x1b[31m{}\x1b[0m", file);
         let chunk = instance.load_file(&file_id, &file).unwrap();
         let mut out = LuaTable::default();
         out.insert_chunk(1, chunk);
@@ -275,9 +258,8 @@ impl Telua {
       Box::new(|instance, args| {
         let file_id = args.get_string(1).unwrap().as_raw().to_owned();
         let file = if let Some(id) = file_id.strip_prefix("Module:") { id.to_owned() } else { file_id };
-        println!("reqphp: \x1b[33m{}\x1b[0m", file);
         let api = instance.call_file(&file, &format!("{}.lua", &file)).unwrap();
-        let api = if let Some(mut api) = api.get_string_table(1) {
+        if let Some(mut api) = api.get_string_table(1) {
           let mut old_api = Default::default();
           std::mem::swap(&mut api.value, &mut old_api);
           api.value = old_api
@@ -300,8 +282,7 @@ impl Telua {
           wrap
         } else {
           api
-        };
-        api
+        }
       }),
     );
     api.insert("frameExists", Box::new(|_, _| todo!()));
@@ -622,7 +603,7 @@ fn clean_raw(src: String) -> String {
   }
 }
 fn scan(word: &str) {
-  let page = remote::get(word).map(|it| clean_raw(it)).unwrap();
+  let page = remote::get(word).map(clean_raw).unwrap();
   let mut subwords = HashSet::new();
   let words = parse_page(&page, "French", &mut subwords).unwrap();
   for (id, page) in words.into_iter().enumerate() {
