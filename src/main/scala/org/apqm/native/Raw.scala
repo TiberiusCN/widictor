@@ -5,5 +5,11 @@ final class NativeLib {
 }
 object NativeLib {
   System.loadLibrary("widictor")
-  private[this] val api = new NativeLib
+  // private[this]
+  val api = new NativeLib
+}
+
+class Telua {
+  @native def empty(): Long
+  private val ptr = empty()
 }

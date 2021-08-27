@@ -97,7 +97,6 @@ fn parse_page(
     while !src.is_empty() {
       let (s, text) = Text::parse(&src, subwords).map_err(|e| {
         eprintln!("\x1b[31mError\x1b[0m: {:?} during parsing «{}»", e, src);
-        ()
       })?;
       src = s;
       out.push(text);
@@ -567,11 +566,6 @@ impl From<Frame> for LuaTable<LuaString> {
   }
 }
 
-fn main() {
-  let arg = std::env::args().nth(1).unwrap();
-  scan(&arg);
-}
-
 fn clean_raw(src: String) -> String {
   let mut opened = false;
   let mut tag = String::new();
@@ -602,10 +596,10 @@ fn clean_raw(src: String) -> String {
     out
   }
 }
-fn scan(word: &str) {
+pub fn scan(word: &str, language: &str) {
   let page = remote::get(word).map(clean_raw).unwrap();
   let mut subwords = HashSet::new();
-  let words = parse_page(&page, "French", &mut subwords).unwrap();
+  let words = parse_page(&page, &language, &mut subwords).unwrap();
   for (id, page) in words.into_iter().enumerate() {
     println!("{} — {}:", word, id);
     for section in page.sections.iter().rev() {
