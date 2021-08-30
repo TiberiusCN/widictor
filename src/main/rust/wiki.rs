@@ -199,7 +199,7 @@ type ApiMap = HashMap<
   >,
 >;
 impl Telua {
-  fn empty() -> TeluaResult<Self> {
+  pub fn empty() -> TeluaResult<Self> {
     let machine = LuaInstance::new(
       "pkg/mw_main.lua",
       "pkg",
