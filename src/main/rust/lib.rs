@@ -31,6 +31,20 @@ impl<T> Throwable<T> for Jr<T> {
     }
   }
 }
+trait JIface {
+  fn as_mut<'a>(jenv: &JNIEnv, jclass: JClass<'a>) -> Jr<&'a mut Self> {
+    let r = jenv.get_field(jclass, "ptr", "J")?.j()?;
+    unsafe {
+      let r: *mut T = std::mem::transmute(r);
+      if let Some(r) = r.as_mut() {
+        Ok(r)
+      } else {
+        Err("null pointer".into())
+      }
+    }
+  }
+}
+
 trait JRef {
   fn as_mut<T>(&self, jenv: &JNIEnv) -> Jr<&mut T>;
   fn nullify(&self, jenv: &JNIEnv) -> Jr<()>;
