@@ -31,17 +31,27 @@ impl<T> Throwable<T> for Jr<T> {
     }
   }
 }
-trait JIface {
-  fn as_mut<'a>(jenv: &JNIEnv, jclass: JClass<'a>) -> Jr<&'a mut Self> {
-    let r = jenv.get_field(jclass, "ptr", "J")?.j()?;
+pub trait JIface: Sized {
+  fn mut_raw<'a>(jenv: &JNIEnv<'a>, jclass: JClass<'a>) -> Jr<Option<&'a mut Self>> {
+    let r = jenv.get_field(jclass, "ptr", "J")?.j()? as isize;
     unsafe {
-      let r: *mut T = std::mem::transmute(r);
+      let r: usize = std::mem::transmute(r);
+      let r: *mut Self = r as _;
       if let Some(r) = r.as_mut() {
-        Ok(r)
+        Ok(Some(r))
       } else {
-        Err("null pointer".into())
+        Ok(None)
       }
     }
+  }
+  fn box_raw<'a>(jenv: &JNIEnv<'a>, jclass: JClass<'a>) -> Jr<Box<Self>> {
+    Self::mut_raw(jenv, jclass)
+      .and_then(|it| -> Jr<_> {
+        unsafe {
+          jenv.set_field(jclass, "ptr", "J", 0.into()).map_err(Box::new)?;
+          Ok(Some(Box::from_raw(it)))
+        }
+      })
   }
 }
 
