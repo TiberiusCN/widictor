@@ -17,6 +17,7 @@ type Jr<T> = Result<T, Box<dyn std::error::Error>>;
 //   }
 // }
 fn unit() {}
+fn hide<T>(_: T) {}
 trait Throwable<T> {
   fn throw<L: FnOnce() -> T>(self, jenv: JNIEnv, or_else: L) -> T;
 }
@@ -31,7 +32,7 @@ impl<T> Throwable<T> for Jr<T> {
     }
   }
 }
-pub trait JIface: Sized {
+pub trait JIFace: Sized {
   fn mut_raw<'a>(jenv: &JNIEnv<'a>, jclass: JClass<'a>) -> Jr<Option<&'a mut Self>> {
     let r = jenv.get_field(jclass, "ptr", "J")?.j()? as isize;
     unsafe {
@@ -44,16 +45,29 @@ pub trait JIface: Sized {
       }
     }
   }
-  fn box_raw<'a>(jenv: &JNIEnv<'a>, jclass: JClass<'a>) -> Jr<Box<Self>> {
+  fn box_raw<'a>(jenv: &JNIEnv<'a>, jclass: JClass<'a>) -> Jr<Option<Box<Self>>> {
     Self::mut_raw(jenv, jclass)
-      .and_then(|it| -> Jr<_> {
+      .and_then(|it| it.map(|it| {
         unsafe {
           jenv.set_field(jclass, "ptr", "J", 0.into()).map_err(Box::new)?;
-          Ok(Some(Box::from_raw(it)))
+          Ok(Box::from_raw(it))
         }
-      })
+      }).transpose())
+  }
+  fn jni(self) -> *mut Self {
+    Box::into_raw(Box::new(self))
   }
 }
+trait JRConv<T> {
+  fn jni(self) -> Jr<*mut T>;
+}
+impl<T: JIFace, E: 'static + std::error::Error> JRConv<T> for Result<T, E> {
+  fn jni(self) -> Jr<*mut T> {
+    self.map_err(Into::into).map(JIFace::jni)
+  }
+}
+
+impl JIFace for Telua {}
 
 trait JRef {
   fn as_mut<T>(&self, jenv: &JNIEnv) -> Jr<&mut T>;
@@ -97,14 +111,15 @@ pub extern "system" fn Java_org_apqm_jni_Telua_nnew(
   jenv: JNIEnv,
   _jclass: JClass,
 ) -> *mut Telua {
-  (|| -> Jr<_> {
-    Ok(Box::into_raw(Box::new(Telua::empty()?)))
-  })().throw(jenv, null_mut)
+  Telua::empty().jni().throw(jenv, null_mut)
+  // (|| Ok(Telua::empty()?.jni()))
+  // ().throw(jenv, null_mut)
 }
 #[no_mangle]
 pub extern "system" fn Java_org_apqm_jni_Telua_close(
   jenv: JNIEnv,
   jclass: JClass,
 ) {
-  (|| jclass.destroy::<Telua>(&jenv))().throw(jenv, unit)
+  Telua::box_raw(&jenv, jclass).map(hide).throw(jenv, unit)
+//(|| jclass.destroy::<Telua>(&jenv))().throw(jenv, unit)
 }
