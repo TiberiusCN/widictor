@@ -1,4 +1,5 @@
 use crate::{remote, scribunto::*};
+use jnino::JFace;
 use language::Language;
 use std::{
   collections::{HashMap, HashSet},
@@ -183,6 +184,7 @@ fn parse_page(
   Ok(lang.subdivide())
 }
 
+#[derive(JFace)]
 pub struct Telua {
   pub machine: LuaInstance<std::process::ChildStdout, std::process::ChildStdin>,
   libs: HashMap<&'static str, LuaTable<LuaString>>,

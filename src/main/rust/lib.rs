@@ -1,73 +1,8 @@
 use std::ptr::null_mut;
 
 use jni::{JNIEnv, objects::{JClass, JString}};
+use jnino::*;
 use wiki::Telua;
-
-type Jr<T> = Result<T, Box<dyn std::error::Error>>;
-//#[derive(Debug)]
-// struct Se(String);
-// impl std::fmt::Display for Se {
-//   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//     self.0.fmt(f)
-//   }
-// }
-// impl From<&str> for Se {
-//   fn from(it: &str) -> Self {
-//     Self(it.to_owned())
-//   }
-// }
-fn unit() {}
-fn hide<T>(_: T) {}
-trait Throwable<T> {
-  fn throw<L: FnOnce() -> T>(self, jenv: JNIEnv, or_else: L) -> T;
-}
-impl<T> Throwable<T> for Jr<T> {
-  fn throw<L: FnOnce() -> T>(self, jenv: JNIEnv, or_else: L) -> T {
-    match self {
-      Ok(it) => it,
-      Err(e) => {
-        let _ = jenv.throw(e.to_string()).map_err(|e| eprintln!("can't throw: {}", e));
-        or_else()
-      }
-    }
-  }
-}
-pub trait JIFace: Sized {
-  fn mut_raw<'a>(jenv: &JNIEnv<'a>, jclass: JClass<'a>) -> Jr<Option<&'a mut Self>> {
-    let r = jenv.get_field(jclass, "ptr", "J")?.j()? as isize;
-    unsafe {
-      let r: usize = std::mem::transmute(r);
-      let r: *mut Self = r as _;
-      if let Some(r) = r.as_mut() {
-        Ok(Some(r))
-      } else {
-        Ok(None)
-      }
-    }
-  }
-  fn box_raw<'a>(jenv: &JNIEnv<'a>, jclass: JClass<'a>) -> Jr<Option<Box<Self>>> {
-    Self::mut_raw(jenv, jclass)
-      .and_then(|it| it.map(|it| {
-        unsafe {
-          jenv.set_field(jclass, "ptr", "J", 0.into()).map_err(Box::new)?;
-          Ok(Box::from_raw(it))
-        }
-      }).transpose())
-  }
-  fn jni(self) -> *mut Self {
-    Box::into_raw(Box::new(self))
-  }
-}
-trait JRConv<T> {
-  fn jni(self) -> Jr<*mut T>;
-}
-impl<T: JIFace, E: 'static + std::error::Error> JRConv<T> for Result<T, E> {
-  fn jni(self) -> Jr<*mut T> {
-    self.map_err(Into::into).map(JIFace::jni)
-  }
-}
-
-impl JIFace for Telua {}
 
 trait JRef {
   fn as_mut<T>(&self, jenv: &JNIEnv) -> Jr<&mut T>;
@@ -112,8 +47,6 @@ pub extern "system" fn Java_org_apqm_jni_Telua_nnew(
   _jclass: JClass,
 ) -> *mut Telua {
   Telua::empty().jni().throw(jenv, null_mut)
-  // (|| Ok(Telua::empty()?.jni()))
-  // ().throw(jenv, null_mut)
 }
 #[no_mangle]
 pub extern "system" fn Java_org_apqm_jni_Telua_close(
@@ -121,5 +54,4 @@ pub extern "system" fn Java_org_apqm_jni_Telua_close(
   jclass: JClass,
 ) {
   Telua::box_raw(&jenv, jclass).map(hide).throw(jenv, unit)
-//(|| jclass.destroy::<Telua>(&jenv))().throw(jenv, unit)
 }

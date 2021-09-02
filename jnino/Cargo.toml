@@ -1,0 +1,5 @@
+[workspace]
+members = [
+  "jnino",
+  "derive_jface",
+]
