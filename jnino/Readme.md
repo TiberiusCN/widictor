@@ -1,17 +1,41 @@
 This project allows you to use rust objects like part of jvm objects.
 
-You have to add ptr: Long to your jvm object and call corresponding native constructor. This value will be used as native pointer.
+## JVM
+
+- add native constructor with Long return and private Long property
+
+- implement AutoCloseable as native method
+
+- add finalizer
+
+- add native methods
 
 ```
-class Sample {
+class Sample extends AutoCloseable {
   @native private def nnew(): Long
+  @native def close: Unit
+  @native def test: Unit
   private val ptr = nnew()
+  override def finalize = close
 }
 ```
 
-On the rust side you can:
+- use try-with-resource (java) / Using (scala) or call close() implicitly (don't trust to finalization — it's a thin red line)
 
-- use throw(JNIEnv, default_function)
+## Rust
+
+- mark structure as JFace
+
+```
+#[derive(JFace)]
+pub struct Sample { … }
+```
+
+- use throw(JNIEnv, default_function) for converting rust Jr<_> (Result<_, Box<dyn std::error::Error>> to default JVM exception
+
+- use JFace::jni() for converting to raw heap pointer
+
+- provide native constructor to JNI
 
 ```
 #[no_mangle]
@@ -19,24 +43,37 @@ pub extern "system" fn Java_package_Sample_nnew(
   jenv: JNIEnv,
   _jclass: JClass,
 ) -> *mut Sample {
-  Telua::empty().jni().throw(jenv, null_mut)
+  Sample::new().jni().throw(jenv, null_mut)
 }
 ```
 
-#[no_mangle]
-pub extern "system" fn Java_org_apqm_jni_NativeLib_getPage(jenv: JNIEnv, _jclass: JClass, path: JString, language: JString) {
-  let path: String = jenv.get_string(path).unwrap().into();
-  let language: String = jenv.get_string(language).unwrap().into();
-  wiki::scan(&path, &language);
-}
+- use unit for Result<(), _>::throw() or hide for Result<T, _>::throw for unneeded T
 
+- use JFace::mut_raw and map/and_then for native methods
+
+```
 #[no_mangle]
-pub extern "system" fn Java_org_apqm_jni_Telua_close(
+pub extern "system" fn Java_org_apqm_jni_Sample_test(
   jenv: JNIEnv,
   jclass: JClass,
 ) {
-  Telua::box_raw(&jenv, jclass).map(hide).throw(jenv, unit)
+  Sample::mut_raw(&jenv, jclass).map(|it| {
+    todo!()
+  }).throw(jenv, unit);
 }
+```
+
+- use JFace::box_raw for destructor
+
+```
+#[no_mangle]
+pub extern "system" fn Java_org_apqm_jni_Sample_close(
+  jenv: JNIEnv,
+  jclass: JClass,
+) {
+  Sample::box_raw(&jenv, jclass).map(hide).throw(jenv, unit)
+}
+```
 
 ## License
 

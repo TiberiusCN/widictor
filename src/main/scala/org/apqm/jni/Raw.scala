@@ -8,7 +8,9 @@ object NativeLib {
   val api = new NativeLib
 }
 
-class Telua {
+class Telua extends AutoCloseable {
   @native private def nnew(): Long
+  @native def close: Unit
+  override def finalize = close
   private val ptr = nnew()
 }
