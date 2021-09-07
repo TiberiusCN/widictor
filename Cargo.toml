@@ -10,7 +10,7 @@ edition = "2018"
 directories = "3.0"
 hex = "0.4"
 jni = "0.19"
-jnino = { path = "jnino/jnino" }
+jnino = "0.1"
 lazy_static = "1.4"
 log = "0.4"
 nom = "5.0"
