@@ -64,3 +64,12 @@ pub extern "system" fn Java_org_apqm_jni_Telua_close(
 ) {
   Telua::box_raw(&jenv, jclass).map(hide).throw(jenv, unit)
 }
+#[no_mangle]
+pub extern "system" fn Java_org_apqm_jni_Telua_callFile(
+  jenv: JNIEnv,
+  jclass: JClass,
+) {
+  Telua::mut_raw(&jenv, jclass).and_then(|it: &mut Telua| {
+    it.call(file, function, frame)
+  }).throw(jenv, unit)
+}

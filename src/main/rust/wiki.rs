@@ -51,7 +51,7 @@ fn parse_page(
   let mut lang = {
     let iter = &mut iter;
     (move || {
-      while let Some(line) = iter.next() {
+      for line in iter {
         match Language::parse(line) {
           Ok(lang) if lang.1.name == language => return Ok(lang.1),
           Ok(_) => {}

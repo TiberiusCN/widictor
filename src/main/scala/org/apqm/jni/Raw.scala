@@ -11,6 +11,7 @@ object NativeLib {
 class Telua extends AutoCloseable {
   @native private def nnew(): Long
   @native def close: Unit
+  @native def callFile(name: String): Unit
   override def finalize = close
   private val ptr = nnew()
 }
