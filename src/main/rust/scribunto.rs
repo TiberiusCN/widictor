@@ -478,10 +478,10 @@ fn test() {
   assert_eq!(i32::from(val), -882);
   let (last, val) = LuaBool::parse(r"b:0;").unwrap();
   assert!(last.is_empty());
-  assert_eq!(bool::from(val), false);
+  assert!(!bool::from(val));
   let (last, val) = LuaBool::parse(r"b:1;").unwrap();
   assert!(last.is_empty());
-  assert_eq!(bool::from(val), true);
+  assert!(bool::from(val));
   let (last, _) = LuaNull::parse(r"N;").unwrap();
   assert!(last.is_empty());
   let (last, val): (_, LuaTable<LuaInteger>) =
@@ -489,7 +489,7 @@ fn test() {
   assert!(last.is_empty());
   assert!(val.object.is_none());
   {
-    assert_eq!(bool::from(val.get_bool(0).unwrap()), true);
+    assert!(bool::from(val.get_bool(0).unwrap()));
     assert!(val.get_null(1).is_some());
     assert_eq!(f32::from(val.get_float(2).unwrap()), -421000000.0);
     assert_eq!(val.get_string(3).unwrap().as_ref(), "A to Z");
@@ -499,7 +499,7 @@ fn test() {
   assert!(last.is_empty());
   assert!(val.object.is_none());
   {
-    assert_eq!(bool::from(val.get_bool("42").unwrap()), true);
+    assert!(bool::from(val.get_bool("42").unwrap()));
     let val = val.get_integer_table("A to Z").unwrap();
     for i in 0..=2 {
       assert_eq!(i32::from(val.get_integer(i).unwrap()), i + 1);

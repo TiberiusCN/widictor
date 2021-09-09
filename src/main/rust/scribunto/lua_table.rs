@@ -5,6 +5,7 @@ use m::{
   LuaString, LuaType, Parser,
 };
 
+use jnino::JFace;
 use nom::IResult;
 use std::{collections::HashMap, fmt::Display};
 
@@ -74,7 +75,7 @@ impl AnyLua {
   }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, JFace)]
 pub struct LuaTable<T: LuaNameType> {
   pub value: HashMap<T, Box<AnyLua>>,
   pub object: Option<String>,
