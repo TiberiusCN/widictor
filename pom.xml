@@ -28,18 +28,23 @@
       <artifactId>scala-library</artifactId>
       <version>${scala.version}</version>
     </dependency>
+    <dependency>
+      <groupId>org.parboiled</groupId>
+      <artifactId>parboiled_${scala.target}</artifactId>
+      <version>2.3.0</version>
+    </dependency>
 
     <!-- Test -->
     <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-      <version>4.8.1</version>
+      <groupId>org.specs2</groupId>
+      <artifactId>specs2-core_${scala.target}</artifactId>
+      <version>4.12.12</version>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.scalatest</groupId>
-      <artifactId>scalatest_${scala.target}</artifactId>
-      <version>3.0.8</version>
+      <groupId>com.lihaoyi</groupId>
+      <artifactId>utest_${scala.target}</artifactId>
+      <version>0.7.10</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
