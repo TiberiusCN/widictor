@@ -4,22 +4,23 @@
   <artifactId>widictor</artifactId>
   <version>1.0-SNAPSHOT</version>
   <name>${project.artifactId}</name>
+  <packaging>jar</packaging>
   <description>Wiktionary as language tutorial</description>
-  <inceptionYear>2010</inceptionYear>
-  <licenses>
-    <license>
-      <name>My License</name>
-      <url>http://....</url>
-      <distribution>repo</distribution>
-    </license>
-  </licenses>
+  <url>sectator.mooo.com</url>
+
+  <repositories>
+    <repository>
+      <id>maven.apache.org</id>
+      <url>https://repo.maven.apache.org/maven2</url>
+    </repository>
+  </repositories>
 
   <properties>
-    <maven.compiler.source>1.5</maven.compiler.source>
-    <maven.compiler.target>1.5</maven.compiler.target>
     <encoding>UTF-8</encoding>
-    <scala.version>2.13.1</scala.version>
+    <scala.version>2.13.3</scala.version>
     <scala.target>2.13</scala.target>
+    <akka.version>2.6.17</akka.version>
+    <akka-http.version>10.2.6</akka-http.version>
   </properties>
 
   <dependencies>
@@ -33,80 +34,80 @@
       <artifactId>parboiled_${scala.target}</artifactId>
       <version>2.3.0</version>
     </dependency>
-
-    <!-- Test -->
     <dependency>
-      <groupId>org.specs2</groupId>
-      <artifactId>specs2-core_${scala.target}</artifactId>
-      <version>4.12.12</version>
-      <scope>test</scope>
+      <groupId>com.typesafe.akka</groupId>
+      <artifactId>akka-actor-typed_${scala.target}</artifactId>
+      <version>${akka.version}</version>
     </dependency>
     <dependency>
-      <groupId>org.scalatest</groupId>
-      <artifactId>scalatest_${scala.target}</artifactId>
-      <version>3.0.8</version>
-      <scope>test</scope>
+      <groupId>com.typesafe.akka</groupId>
+      <artifactId>akka-serialization-jackson_${scala.target}</artifactId>
+      <version>${akka.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.typesafe.akka</groupId>
+      <artifactId>akka-cluster-typed_${scala.target}</artifactId>
+      <version>${akka.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.typesafe.akka</groupId>
+      <artifactId>akka-http_${scala.target}</artifactId>
+      <version>${akka-http.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.typesafe.akka</groupId>
+      <artifactId>akka-http-spray-json_${scala.target}</artifactId>
+      <version>${akka-http.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.typelevel</groupId>
+      <artifactId>cats-core_${scala.target}</artifactId>
+      <version>2.6.1</version>
     </dependency>
   </dependencies>
 
   <build>
-    <sourceDirectory>src/main/scala</sourceDirectory>
-    <testSourceDirectory>src/test/scala</testSourceDirectory>
     <plugins>
       <plugin>
-        <groupId>org.scala-tools</groupId>
-        <artifactId>maven-scala-plugin</artifactId>
-        <version>2.15.0</version>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>4.5.3</version>
         <executions>
           <execution>
+            <id>scala-compile-first</id>
+            <phase>process-resources</phase>
             <goals>
+              <goal>add-source</goal>
               <goal>compile</goal>
-              <goal>testCompile</goal>
             </goals>
-            <configuration>
-              <args>
-              </args>
-            </configuration>
           </execution>
         </executions>
       </plugin>
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <version>2.6</version>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.3.0</version>
         <configuration>
-          <useFile>false</useFile>
-          <disableXmlReport>true</disableXmlReport>
-          <!-- If you have classpath issue like NoDefClassError,... -->
-          <!-- useManifestOnlyJar>false</useManifestOnlyJar -->
-          <includes>
-            <include>**/*Test.*</include>
-            <include>**/*Suite.*</include>
-          </includes>
+          <archive>
+            <manifest>
+              <mainClass>org.apqm.widictor.Main</mainClass>
+            </manifest>
+          </archive>
         </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>3.0.0</version>
-        <executions>
-          <execution>
-            <id>cargo-native</id>
-            <phase>compile</phase>
-            <goals>
-              <goal>exec</goal>
-            </goals>
-            <configuration>
-              <executable>cargo</executable>
-              <arguments>
-                <argument>b</argument>
-                <argument>--release</argument>
-                <argument>--color=always</argument>
-              </arguments>
-            </configuration>
-          </execution>
-        </executions>
       </plugin>
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <id>snapshot</id>
+      <properties>
+        <changelist>-SNAPSHOT</changelist>
+      </properties>
+    </profile>
+    <profile>
+      <id>release</id>
+      <properties>
+        <changelist></changelist>
+      </properties>
+    </profile>
+  </profiles>
 </project>
