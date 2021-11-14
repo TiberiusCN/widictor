@@ -8,9 +8,11 @@ sealed trait WikiAst
 case class Language(lang: String) extends WikiAst
 case class Section(name: String, level: Int) extends WikiAst
 case class RawText(text: String) extends WikiAst
+case class Template(rule: Seq[List[WikiAst]], params: Seq[List[WikiAst]]) extends WikiAst
 case object NewLine extends WikiAst
+case object HalfLine extends WikiAst
 
-class WikiParser(val input: ParserInput) extends Parser {
+class WikiParser(val input: ParserInput, val langFilter: String) extends Parser {
   def nl = rule { '\n' }
   def printable = rule { oneOrMore { CharPredicate.AlphaNum ++ " " } }
   def mark = rule { "=" }
@@ -21,18 +23,33 @@ class WikiParser(val input: ParserInput) extends Parser {
     }
   }
   def rawText = rule { capture(noneOf("\n").+) ~> (RawText(_)) }
+  def template = rule { openTemplate ~ closeTemplate ~ push(RawText("TEMPLATE")) }
+  def empty: Rule1[WikiAst] = rule { push(HalfLine) }
+  def emptyLine: Rule1[WikiAst] = rule { '\n' ~ &('\n') ~ push(NewLine) }
+  def line: Rule1[WikiAst] = rule { section | rawText | emptyLine | empty }
+  def total: Rule1[List[List[WikiAst]]] = rule { line.+(nl) ~ nl.? ~> { seq =>
+    var filter = false
+    seq.toList.flatMap {
+      case node @ Language(lang) =>
+        filter = lang == langFilter
+        None
+      case node => if (filter) Some(node) else None
+    }.foldLeft(List[List[WikiAst]]())(mergeTree)
+  } ~ EOI }
+
   def openTemplate = rule { "{{" }
   def closeTemplate = rule { "}}" }
   def unicodePrefix = rule { "\\u" }
   def quote = rule { "\\\"" }
-  def template = rule { openTemplate ~ closeTemplate ~ push(RawText("TEMPLATE")) }
-  def text: Rule1[WikiAst] = rule { rawText | template }
-  def empty: Rule1[WikiAst] = rule { push(NewLine) }
-  def line: Rule1[WikiAst] = rule { section | text | empty }
-  def total: Rule1[List[List[WikiAst]]] = rule { line.+(nl) ~ nl.? ~> { seq =>
-    val list = seq.toList
-    list.foldLeft(List[List[WikiAst]]())(mergeTree)
-  } ~ EOI }
+  def pureText = rule { capture(noneOf("\n{}|").+) ~> (RawText(_)) }
+  // def template = rule { openTemplate ~ pureText.+.separatedBy('|') ~ closeTemplate ~> {
+  //   case Seq() => test(false)
+  //   case Seq(j) => Template(j, Seq())
+  //     ???
+  // }}
+  def textElement = rule { pureText | template }
+  def text: Rule1[Seq[WikiAst]] = rule { textElement.* }
+
   private def mergeTree(acc: List[List[WikiAst]], line: WikiAst): List[List[WikiAst]] = {
     val (current, branches) = acc match {
       case Nil => (List(), List())
@@ -63,6 +80,8 @@ class WikiParser(val input: ParserInput) extends Parser {
              => ret(up :: tail)
           case (Section(_, levelu), Section(_, leveld)) if (levelu < leveld) =>
             ret(down :: up :: tail)
+          case (RawText(up), _) =>
+            merge(tail, down, Some(RawText(up) :: tail))
           case _ => merge(tail, down, Some(root.getOrElse(current)))
         }
     }

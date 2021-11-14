@@ -8,16 +8,7 @@ object Main extends App {
     case e: ParseError => RED + parser.formatError(e) + RESET
     case n => n.toString
   }}}
-  val p = new WikiParser(java.nio.file.Files.readString(java.nio.file.Paths.get("test")))
-  List[String]().map { l =>
-    val parser = new WikiParser(l)
-    println(l + " → ")
-    val out = parser.total.run().toEither.left.map(onError(parser))
-    out match {
-      case Left(e) => println(s"${RED}$e${RESET}")
-      case Right(s) => s.map(println(_))
-    }
-  }
+  val p = new WikiParser(java.nio.file.Files.readString(java.nio.file.Paths.get("test")), "French")
   val out = p.total.run().toEither.left.map(onError(p))
   out match {
     case Left(e) => println(s"${RED}$e${RESET}")
