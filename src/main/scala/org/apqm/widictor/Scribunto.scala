@@ -12,6 +12,7 @@ case class Section[A](name: String, level: Int, var subsections: List[Section[A]
   def map[B](f: A => B): Section[B] = Section[B](name, level, subsections.map(_.map(f)), f(text))
 }
 case object NewLine extends WikiAst[RawText]
+case object Separator extends WikiAst[RawText]
 case object LineSpace extends WikiAst[RawText]
 sealed trait WikiTextAst
 case class RawText(var text: String) extends WikiAst[RawText] with WikiTextAst
@@ -32,10 +33,16 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
   }
   def rawText = rule { capture(noneOf("\n").+) ~> (j => RawText(j)) }
   // def template = rule { openTemplate ~ closeTemplate ~ push(RawText("TEMPLATE")) }
+  def separator = rule { "----" ~ push(Separator) }
   def empty = rule { push(LineSpace) }
   def emptyLine = rule { '\n' ~ &('\n') ~ push(NewLine) }
-  def line = rule { section | rawText | emptyLine | empty }
-  def total: Rule1[Option[Language[RawText]]] = rule { line.+(nl) ~ nl.? ~> { seq =>
+  def tabMark1 = rule { '#' }
+  def tabMark2 = rule { '*' }
+  def tabMark3 = rule { ':' }
+  def tabMark = rule { tabMark1 | tabMark2 | tabMark3 }
+  def tabs = rule { capture(tabMark.+) ~> (_.length) ~> (_ => ()) }
+  def line = rule { section |  rawText | separator | emptyLine | empty }
+  def total: Rule1[Option[Language[RawText]]] = rule { (tabs.? ~ line).+(nl) ~ nl.? ~> { seq =>
     var filter = false
     seq.toList.flatMap {
       case node: Language[_] =>
@@ -91,6 +98,7 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
         case (_: Language[_], NewLine)
             | (_: Section[_], NewLine)
             | (_, LineSpace)
+            | (_, Separator)
             => up :: tail
         case (up: Section[_], down: Section[_]) if (up.level < down.level) =>
           up.subsections = down :: up.subsections
