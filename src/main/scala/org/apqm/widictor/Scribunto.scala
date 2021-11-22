@@ -18,6 +18,7 @@ sealed trait WikiTextAst
 case class RawText(var text: String) extends WikiAst[RawText] with WikiTextAst
 case class WikiText(text: List[WikiTextAst]) extends WikiAst[WikiTextAst] with WikiTextAst
 case class WikiTemplate(main: String, params: Map[String, WikiTextAst]) extends WikiTextAst
+case class WikiLink(display: List[WikiTextAst], link: List[WikiTextAst]) extends WikiTextAst
 
 // case class Template(rule: Seq[List[WikiAst]], params: Seq[List[WikiAst]]) extends WikiAst
 
@@ -57,8 +58,29 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
 
   def openTemplate = rule { "{{" }
   def closeTemplate = rule { "}}" }
+  def openInternalLink = rule { "[[" }
+  def closeInternalLink = rule { "]]" }
+  def internalLinkSimple = rule { openInternalLink ~ textRaw ~ closeInternalLink ~> { j =>
+    val l = j.toList
+    WikiLink(l, l)
+  }}
+  def internalLinkComplex = rule { openInternalLink ~ textRaw ~ '|' ~ textRaw ~ closeInternalLink ~> { (link, display) =>
+    WikiLink(display.toList, link = link.toList)
+  }}
+  def openExternalLink = rule { "[" }
+  def closeExternalLink = rule { "]" }
+  def externalLinkSimple = rule { openExternalLink ~ textRaw ~ closeExternalLink ~> { j =>
+    val l = j.toList
+    WikiLink(l, l)
+  }}
+  def externalLinkComplex = rule { openExternalLink ~ textRaw ~ '|' ~ textRaw ~ closeExternalLink ~> { (link, display) =>
+    WikiLink(display.toList, link = link.toList)
+  }}
+  def link = rule { internalLinkComplex | internalLinkSimple | externalLinkComplex | externalLinkSimple }
   def unicodePrefix = rule { "\\u" }
-  def pureText = rule { capture(noneOf("\n{}|").+) ~> (RawText(_)) }
+  def unicodeStr = rule { unicodePrefix ~ capture(4.times(CharPredicate.HexDigit)) ~> (_.foldLeft("")(_+_)) }
+  def unicode = rule { unicodeStr ~> (j => Integer.parseInt(j, 16)) ~> (j => RawText(j.toChar.toString)) }
+  def pureText = rule { capture(noneOf("\\\n{}|[]").+) ~> (RawText(_)) }
   def templateParamsRaw: Rule1[Seq[Seq[WikiTextAst]]] = rule { { '|' ~ textRaw }.* }
   def templateParams: Rule1[Map[String, WikiTextAst]] = rule { templateParamsRaw ~> { params: Seq[Seq[WikiTextAst]] =>
     var id = 0
@@ -70,7 +92,7 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
   def template = rule { openTemplate ~ pureText ~ templateParams ~ closeTemplate ~> { (name, params) =>
     WikiTemplate(name.text, params)
   }}
-  def textElement = rule { template | pureText }
+  def textElement = rule { template | link | unicode | pureText }
   def textRaw: Rule1[Seq[WikiTextAst]] = rule { textElement.* }
   def text: Rule1[Seq[WikiTextAst]] = rule { textRaw ~ EOI }
 
