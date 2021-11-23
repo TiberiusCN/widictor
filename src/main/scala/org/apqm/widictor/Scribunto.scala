@@ -19,6 +19,8 @@ case class RawText(var text: String) extends WikiAst[RawText] with WikiTextAst
 case class WikiText(text: List[WikiTextAst]) extends WikiAst[WikiTextAst] with WikiTextAst
 case class WikiTemplate(main: String, params: Map[String, WikiTextAst]) extends WikiTextAst
 case class WikiLink(display: List[WikiTextAst], link: List[WikiTextAst]) extends WikiTextAst
+case class WikiQuote(text: List[WikiTextAst]) extends WikiTextAst
+case class WikiBold(text: List[WikiTextAst]) extends WikiTextAst
 
 // case class Template(rule: Seq[List[WikiAst]], params: Seq[List[WikiAst]]) extends WikiAst
 
@@ -77,10 +79,14 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
     WikiLink(display.toList, link = link.toList)
   }}
   def link = rule { internalLinkComplex | internalLinkSimple | externalLinkComplex | externalLinkSimple }
+  def quoteMark = rule { "''" }
+  def quote = rule { quoteMark ~ textRaw ~ quoteMark ~> (j => WikiQuote(j.toList)) }
+  def boldMark = rule { "''" }
+  def bold = rule { boldMark ~ textRaw ~ boldMark ~> (j => WikiBold(j.toList)) }
   def unicodePrefix = rule { "\\u" }
   def unicodeStr = rule { unicodePrefix ~ capture(4.times(CharPredicate.HexDigit)) ~> (_.foldLeft("")(_+_)) }
   def unicode = rule { unicodeStr ~> (j => Integer.parseInt(j, 16)) ~> (j => RawText(j.toChar.toString)) }
-  def pureText = rule { capture(noneOf("\\\n{}|[]").+) ~> (RawText(_)) }
+  def pureText = rule { capture(noneOf("\\\n{}|[]'").+) ~> (RawText(_)) }
   def templateParamsRaw: Rule1[Seq[Seq[WikiTextAst]]] = rule { { '|' ~ textRaw }.* }
   def templateParams: Rule1[Map[String, WikiTextAst]] = rule { templateParamsRaw ~> { params: Seq[Seq[WikiTextAst]] =>
     var id = 0
@@ -92,7 +98,8 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
   def template = rule { openTemplate ~ pureText ~ templateParams ~ closeTemplate ~> { (name, params) =>
     WikiTemplate(name.text, params)
   }}
-  def textElement = rule { template | link | unicode | pureText }
+  def apostroph = rule { "'" ~ push(RawText("'")) }
+  def textElement = rule { template | link | unicode | bold | quote | pureText | apostroph }
   def textRaw: Rule1[Seq[WikiTextAst]] = rule { textElement.* }
   def text: Rule1[Seq[WikiTextAst]] = rule { textRaw ~ EOI }
 
