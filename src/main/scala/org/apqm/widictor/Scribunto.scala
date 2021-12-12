@@ -1,15 +1,21 @@
 package org.apqm.widictor
 
-import org.parboiled2._
 import cats.implicits._
-import shapeless.HNil
+import org.parboiled2._
+import scala.util._
 
 sealed trait WikiAst[A]
 case class Language[A](lang: String, var sections: List[Section[A]], var text: A) extends WikiAst[A] {
-  def map[B](f: A => B) = Language[B](lang, sections.map(_.map(f)), f(text))
+  def map[E, B](f: A => Either[E, B]) = for {
+    text <- f(text)
+    sections <- sections.map(_.map(f)).sequence
+  } yield Language(lang, sections, text)
 }
 case class Section[A](name: String, level: Int, var subsections: List[Section[A]], var text: A) extends WikiAst[A] {
-  def map[B](f: A => B): Section[B] = Section[B](name, level, subsections.map(_.map(f)), f(text))
+  def map[E, B](f: A => Either[E, B]): Either[E, Section[B]] = for {
+    text <- f(text)
+    subsections <- subsections.map(_.map(f)).sequence
+  } yield Section(name, level, subsections, text)
 }
 case object NewLine extends WikiAst[RawText]
 case object Separator extends WikiAst[RawText]
@@ -18,11 +24,9 @@ sealed trait WikiTextAst
 case class RawText(var text: String) extends WikiAst[RawText] with WikiTextAst
 case class WikiText(text: List[WikiTextAst]) extends WikiAst[WikiTextAst] with WikiTextAst
 case class WikiTemplate(main: String, params: Map[String, WikiTextAst]) extends WikiTextAst
-case class WikiLink(display: List[WikiTextAst], link: List[WikiTextAst]) extends WikiTextAst
-case class WikiQuote(text: List[WikiTextAst]) extends WikiTextAst
-case class WikiBold(text: List[WikiTextAst]) extends WikiTextAst
-
-// case class Template(rule: Seq[List[WikiAst]], params: Seq[List[WikiAst]]) extends WikiAst
+case class WikiLink(display: WikiText, link: WikiText) extends WikiTextAst
+case class WikiQuote(text: WikiText) extends WikiTextAst
+case class WikiBold(text: WikiText) extends WikiTextAst
 
 class WikiParser(val input: ParserInput, val langFilter: String) extends Parser {
   def nl = rule { '\n' }
@@ -58,51 +62,6 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
     }
   } ~ EOI }
 
-  def openTemplate = rule { "{{" }
-  def closeTemplate = rule { "}}" }
-  def openInternalLink = rule { "[[" }
-  def closeInternalLink = rule { "]]" }
-  def internalLinkSimple = rule { openInternalLink ~ textRaw ~ closeInternalLink ~> { j =>
-    val l = j.toList
-    WikiLink(l, l)
-  }}
-  def internalLinkComplex = rule { openInternalLink ~ textRaw ~ '|' ~ textRaw ~ closeInternalLink ~> { (link, display) =>
-    WikiLink(display.toList, link = link.toList)
-  }}
-  def openExternalLink = rule { "[" }
-  def closeExternalLink = rule { "]" }
-  def externalLinkSimple = rule { openExternalLink ~ textRaw ~ closeExternalLink ~> { j =>
-    val l = j.toList
-    WikiLink(l, l)
-  }}
-  def externalLinkComplex = rule { openExternalLink ~ textRaw ~ '|' ~ textRaw ~ closeExternalLink ~> { (link, display) =>
-    WikiLink(display.toList, link = link.toList)
-  }}
-  def link = rule { internalLinkComplex | internalLinkSimple | externalLinkComplex | externalLinkSimple }
-  def quoteMark = rule { "''" }
-  def quote = rule { quoteMark ~ textRaw ~ quoteMark ~> (j => WikiQuote(j.toList)) }
-  def boldMark = rule { "''" }
-  def bold = rule { boldMark ~ textRaw ~ boldMark ~> (j => WikiBold(j.toList)) }
-  def unicodePrefix = rule { "\\u" }
-  def unicodeStr = rule { unicodePrefix ~ capture(4.times(CharPredicate.HexDigit)) ~> (_.foldLeft("")(_+_)) }
-  def unicode = rule { unicodeStr ~> (j => Integer.parseInt(j, 16)) ~> (j => RawText(j.toChar.toString)) }
-  def pureText = rule { capture(noneOf("\\\n{}|[]'").+) ~> (RawText(_)) }
-  def templateParamsRaw: Rule1[Seq[Seq[WikiTextAst]]] = rule { { '|' ~ textRaw }.* }
-  def templateParams: Rule1[Map[String, WikiTextAst]] = rule { templateParamsRaw ~> { params: Seq[Seq[WikiTextAst]] =>
-    var id = 0
-    params.map { seq =>
-      id += 1
-      id.toString -> WikiText(seq.toList)
-    }.toMap
-  }}
-  def template = rule { openTemplate ~ pureText ~ templateParams ~ closeTemplate ~> { (name, params) =>
-    WikiTemplate(name.text, params)
-  }}
-  def apostroph = rule { "'" ~ push(RawText("'")) }
-  def textElement = rule { template | link | unicode | bold | quote | pureText | apostroph }
-  def textRaw: Rule1[Seq[WikiTextAst]] = rule { textElement.* }
-  def text: Rule1[Seq[WikiTextAst]] = rule { textRaw ~ EOI }
-
   @scala.annotation.tailrec
   private def insert(acc: List[WikiAst[RawText]], line: WikiAst[RawText]): List[WikiAst[RawText]] = {
     (acc, line) match {
@@ -136,6 +95,53 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
       }
     }
   }
+
+  def openTemplate = rule { "{{" }
+  def closeTemplate = rule { "}}" }
+  def openInternalLink = rule { "[[" }
+  def closeInternalLink = rule { "]]" }
+  def internalLinkSimple = rule { openInternalLink ~ textRaw ~ closeInternalLink ~> { j =>
+    val l = WikiText(j.toList)
+    WikiLink(l, l)
+  }}
+  def internalLinkComplex = rule { openInternalLink ~ textRaw ~ '|' ~ textRaw ~ closeInternalLink ~> { (link, display) =>
+    WikiLink(WikiText(display.toList), link = WikiText(link.toList))
+  }}
+  def openExternalLink = rule { "[" }
+  def closeExternalLink = rule { "]" }
+  def externalLinkSimple = rule { openExternalLink ~ textRaw ~ closeExternalLink ~> { j =>
+    val l = WikiText(j.toList)
+    WikiLink(l, l)
+  }}
+  def externalLinkComplex = rule { openExternalLink ~ textRaw ~ '|' ~ textRaw ~ closeExternalLink ~> { (link, display) =>
+    WikiLink(WikiText(display.toList), link = WikiText(link.toList))
+  }}
+  def link = rule { internalLinkComplex | internalLinkSimple | externalLinkComplex | externalLinkSimple }
+  def quoteMark = rule { "''" }
+  def quote = rule { quoteMark ~ textRaw ~ quoteMark ~> (j => WikiQuote(WikiText(j.toList))) }
+  def boldMark = rule { "'''" }
+  def bold = rule { boldMark ~ textRaw ~ boldMark ~> (j => WikiBold(WikiText(j.toList))) }
+  def unicodePrefix = rule { "\\u" }
+  def unicodeStr = rule { unicodePrefix ~ capture(4.times(CharPredicate.HexDigit)) ~> (_.foldLeft("")(_+_)) }
+  def unicode = rule { unicodeStr ~> (j => Integer.parseInt(j, 16)) ~> (j => RawText(j.toChar.toString)) }
+  def pureText = rule { capture(noneOf("\\\n{}|[]'").+) ~> (RawText(_)) }
+  def templateParamsRaw: Rule1[Seq[Seq[WikiTextAst]]] = rule { { '|' ~ textRaw }.* }
+  def templateParams: Rule1[Map[String, WikiTextAst]] = rule { templateParamsRaw ~> { params: Seq[Seq[WikiTextAst]] =>
+    var id = 0
+    params.map { seq =>
+      id += 1
+      id.toString -> WikiText(seq.toList)
+    }.toMap
+  }}
+  def template = rule { openTemplate ~ pureText ~ templateParams ~ closeTemplate ~> { (name, params) =>
+    WikiTemplate(name.text, params)
+  }}
+  def apostroph = rule { "'" ~ &(noneOf("'")) ~ push(RawText("'")) }
+  def textElement = rule { template | link | unicode | bold | quote | pureText }
+  def textRaw: Rule1[Seq[WikiTextAst]] = rule { textElement.* }
+  def text: Rule1[WikiText] = rule { textRaw ~ EOI ~> { text: Seq[WikiTextAst] =>
+    WikiText(text.toList)
+  }}
 }
 object WikiParser {
   def run(source: String, lang: String) = {
@@ -144,11 +150,13 @@ object WikiParser {
       case n => n.toString
     }}}
     val p = new WikiParser(source, lang)
-    p.total.run().toEither.left.map(onError(p)).map(_.map(_.map { j =>
-      val p = new WikiParser(j.text, lang)
-      val z = p.text.run().toEither.left.map(onError(p))
-      import scala.io.AnsiColor._
-      println(s"$RED$j$RESET → $z")
-    }))
+    for {
+      total <- p.total.run().toEither.left.map(onError(p))
+      language <- total.toRight(s"Language $lang not found")
+      text <- language.map[String, WikiText] { j =>
+        val p = new WikiParser(j.text, lang)
+        p.text.run().toEither.left.map(onError(p))
+      }
+    } yield text
   }
 }
