@@ -6,27 +6,74 @@ import scala.util._
 
 sealed trait WikiAst[A]
 case class Language[A](lang: String, var sections: List[Section[A]], var text: A) extends WikiAst[A] {
-  def map[E, B](f: A => Either[E, B]) = for {
-    text <- f(text)
+  def map[E, B](f: (Option[String], A) => Either[E, B]) = for {
+    text <- f(None, text)
     sections <- sections.map(_.map(f)).sequence
   } yield Language(lang, sections, text)
 }
 case class Section[A](name: String, level: Int, var subsections: List[Section[A]], var text: A) extends WikiAst[A] {
-  def map[E, B](f: A => Either[E, B]): Either[E, Section[B]] = for {
-    text <- f(text)
+  def map[E, B](f: (Option[String], A) => Either[E, B]): Either[E, Section[B]] = for {
+    text <- f(name.some, text)
     subsections <- subsections.map(_.map(f)).sequence
   } yield Section(name, level, subsections, text)
 }
 case object NewLine extends WikiAst[RawText]
 case object Separator extends WikiAst[RawText]
 case object LineSpace extends WikiAst[RawText]
-sealed trait WikiTextAst
-case class RawText(var text: String) extends WikiAst[RawText] with WikiTextAst
-case class WikiText(text: List[WikiTextAst]) extends WikiAst[WikiTextAst] with WikiTextAst
-case class WikiTemplate(main: String, params: Map[String, WikiTextAst]) extends WikiTextAst
-case class WikiLink(display: WikiText, link: WikiText) extends WikiTextAst
-case class WikiQuote(text: WikiText) extends WikiTextAst
-case class WikiBold(text: WikiText) extends WikiTextAst
+sealed trait Clarifiable
+sealed trait WikiTextAst {
+  type Clarifier = (Clarifiable) => Either[Throwable, String]
+  def clarify(clarifier: Clarifier): Either[Vector[Throwable], String]
+}
+case class RawText(var text: String) extends WikiAst[RawText] with WikiTextAst {
+  def clarify(clarifier: Clarifier) = text.asRight
+}
+case class WikiText(text: List[WikiTextAst]) extends WikiAst[WikiTextAst] with WikiTextAst {
+  def clarify(clarifier: Clarifier) = text.partitionMap(_.clarify(clarifier)) match {
+    case (Nil, rights) => Right(rights.foldLeft("")(_+_))
+    case (lefts, _) => Left(lefts.flatten.toVector)
+  }
+}
+case class RawWikiTemplate(main: String, params: Map[String, String]) extends Clarifiable {
+  def wikify = "{{" + main + params.foldLeft("")((acc, p) => s"$acc|${p._1}=${p._2}") + "}}"
+}
+case class WikiTemplate(main: String, params: Seq[WikiTextAst]) extends WikiTextAst {
+  def clarify(clarifier: Clarifier) = for {
+    newParams <- params.partitionMap(_.clarify(clarifier)) match {
+      case (Nil, rights) => {
+        var unnamed = Seq[String]()
+        var named = scala.collection.mutable.HashMap[String, String]()
+        rights.foreach(_.split("=", 2) match {
+          case Array(full) => unnamed :+ full
+          case Array(name, value) => named += name -> value
+        })
+        var id = 0
+        val generator = { () =>
+          id += 1
+          var test = s"$id"
+          while (named.contains(test)) {
+            id += 1
+            test = s"$id"
+          }
+          test
+        }
+        unnamed.foreach(named += generator() -> _)
+        Right(named.toMap)
+      }
+      case (lefts, _) => Left(lefts.flatten.toVector)
+    }
+    template <- clarifier(RawWikiTemplate(main, newParams)).left.map(Vector(_))
+  } yield template
+}
+case class WikiLink(display: WikiText, link: WikiText) extends WikiTextAst {
+  def clarify(clarifier: Clarifier) = display.clarify(clarifier)
+}
+case class WikiQuote(text: WikiText) extends WikiTextAst {
+  def clarify(clarifier: Clarifier) = text.clarify(clarifier)
+}
+case class WikiBold(text: WikiText) extends WikiTextAst {
+  def clarify(clarifier: Clarifier) = text.clarify(clarifier)
+}
 
 class WikiParser(val input: ParserInput, val langFilter: String) extends Parser {
   def nl = rule { '\n' }
@@ -125,16 +172,9 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
   def unicodeStr = rule { unicodePrefix ~ capture(4.times(CharPredicate.HexDigit)) ~> (_.foldLeft("")(_+_)) }
   def unicode = rule { unicodeStr ~> (j => Integer.parseInt(j, 16)) ~> (j => RawText(j.toChar.toString)) }
   def pureText = rule { capture(noneOf("\\\n{}|[]'").+) ~> (RawText(_)) }
-  def templateParamsRaw: Rule1[Seq[Seq[WikiTextAst]]] = rule { { '|' ~ textRaw }.* }
-  def templateParams: Rule1[Map[String, WikiTextAst]] = rule { templateParamsRaw ~> { params: Seq[Seq[WikiTextAst]] =>
-    var id = 0
-    params.map { seq =>
-      id += 1
-      id.toString -> WikiText(seq.toList)
-    }.toMap
-  }}
+  def templateParams: Rule1[Seq[Seq[WikiTextAst]]] = rule { { '|' ~ textRaw }.* }
   def template = rule { openTemplate ~ pureText ~ templateParams ~ closeTemplate ~> { (name, params) =>
-    WikiTemplate(name.text, params)
+    WikiTemplate(name.text, params.map(j => WikiText(j.toList)))
   }}
   def apostroph = rule { "'" ~ &(noneOf("'")) ~ push(RawText("'")) }
   def textElement = rule { template | link | unicode | bold | quote | pureText }
@@ -145,6 +185,7 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
 }
 object WikiParser {
   def run(source: String, lang: String) = {
+    val word = "manger"
     val onError = { parser: WikiParser => { z: Throwable => z match {
       case e: ParseError => parser.formatError(e)
       case n => n.toString
@@ -153,10 +194,30 @@ object WikiParser {
     for {
       total <- p.total.run().toEither.left.map(onError(p))
       language <- total.toRight(s"Language $lang not found")
-      text <- language.map[String, WikiText] { j =>
+      wikitext <- language.map[String, WikiText] { case (_, j) =>
         val p = new WikiParser(j.text, lang)
         p.text.run().toEither.left.map(onError(p))
       }
+      text <- wikitext.map { case (section, j) =>
+        j.clarify({
+          case template @ RawWikiTemplate(main, params) =>
+            Jsons.expandTemplate(word, template)
+        })
+      }
     } yield text
   }
+}
+
+object Jsons {
+  import play.api.libs.json._
+  case class Wikitext(wikitext: String)
+  implicit val WikitextFormat = Json.format[Wikitext]
+  case class ExpandedTemplate(expandtemplates: Wikitext)
+  implicit val ExpanedTemplateFormat = Json.format[ExpandedTemplate]
+  def expandTemplate(word: String, template: RawWikiTemplate) = Try {
+    val templateValue = java.net.URLEncoder.encode(template.wikify)
+    val url = s"https://en.wiktionary.org/w/api.php?action=expandtemplates&format=json&prop=wikitext&title=$word&text=$templateValue"
+    val out = scala.io.Source.fromURL(url).mkString
+    Json.parse(out).as[ExpandedTemplate].expandtemplates.wikitext
+  }.toEither
 }
