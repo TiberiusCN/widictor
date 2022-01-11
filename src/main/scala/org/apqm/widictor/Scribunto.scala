@@ -221,3 +221,59 @@ object Jsons {
     Json.parse(out).as[ExpandedTemplate].expandtemplates.wikitext
   }.toEither
 }
+
+object Processor {
+  import org.luaj.vm2._
+  import org.luaj.vm2.lib._
+
+  private def buildGlobals() = {
+    val globals = new Globals
+    globals.load(new jse.JseBaseLib)
+    globals.load(new PackageLib)
+    globals.load(new StringLib)
+    globals.load(new jse.JseMathLib)
+    globals
+  }
+
+  private val serverGlobals = buildGlobals()
+  LoadState.install(serverGlobals)
+  compiler.LuaC.install(serverGlobals)
+  LuaString.s_metatable = new ReadOnlyLuaTable(LuaString.s_metatable)
+  class Api {
+    def hello = println("hello from java")
+    def plus(a: Int, b: Int) = a + b
+  }
+  val api = jse.CoerceJavaToLua.coerce(new Api)
+
+  def sandbox(script: String) = Try {
+    val userGlobals = buildGlobals()
+    userGlobals.load(new DebugLib)
+    userGlobals.load(new TableLib)
+    val sethook = userGlobals.get("debug").get("sethook")
+    userGlobals.set("debug", LuaValue.NIL)
+    val chunk = serverGlobals.load(script, "main", userGlobals)
+    val thread = new LuaThread(userGlobals, chunk)
+    val hookfunc = new ZeroArgFunction() {
+      override def call() = throw new Error("Script overran resource limits")
+    }
+    val instructionLimit = 50
+    sethook.invoke(LuaValue.varargsOf(Array(thread, hookfunc, LuaValue.EMPTYSTRING, LuaValue.valueOf(instructionLimit))))
+    thread.resume(api)
+  }.toEither
+
+  class ReadOnlyLuaTable(src: LuaValue) extends LuaTable {
+    presize(src.length, 0)
+    var n = src.next(LuaValue.NIL)
+    while (!n.arg1.isnil) {
+      val key = n.arg1
+      val value = n.arg(2)
+      super.rawset(key, if (value.istable()) new ReadOnlyLuaTable(value) else value)
+      n = src.next(n.arg1)
+    }
+    override def setmetatable(table: LuaValue) = LuaValue.FALSE
+    override def set(key: Int, value: LuaValue) = {}
+    override def rawset(key: Int, value: LuaValue) = {}
+    override def rawset(key: LuaValue, value: LuaValue) = {}
+    override def remove(pos: Int) = LuaValue.NIL
+  }
+}
