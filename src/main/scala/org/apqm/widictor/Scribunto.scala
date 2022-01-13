@@ -239,9 +239,20 @@ object Processor {
   LoadState.install(serverGlobals)
   compiler.LuaC.install(serverGlobals)
   LuaString.s_metatable = new ReadOnlyLuaTable(LuaString.s_metatable)
+  class Template(main: String) {
+    private val map = collection.mutable.Map[String, String]()
+    def set(property: String, value: String) = map += property -> value
+    def get(property: Array[String]) = 
+      map.find(j => property.contains(j._1)).map(_._2).getOrElse("nil")
+    def evaluate(word: String) = {
+      Jsons.expandTemplate(word, RawWikiTemplate(main, map.toMap))
+    }
+  }
   class Api {
+    // вместо преобразования просто сделать сам объект?
     def hello = println("hello from java")
     def plus(a: Int, b: Int) = a + b
+    def template(main: String) = new Template(main)
   }
   val api = jse.CoerceJavaToLua.coerce(new Api)
 
@@ -275,5 +286,24 @@ object Processor {
     override def rawset(key: Int, value: LuaValue) = {}
     override def rawset(key: LuaValue, value: LuaValue) = {}
     override def remove(pos: Int) = LuaValue.NIL
+  }
+
+  def templateToLua(template: RawWikiTemplate) = {
+    val table = new LuaTable
+    table.set("main", LuaValue.valueOf(template.main))
+    template.params.foreach(j => table.set(j._1, LuaValue.valueOf(j._2)))
+  }
+  def templateFromLua(value: LuaValue) = Try {
+    val table = value.checktable()
+    val params = Map.newBuilder[String, String]
+    var n = table.next(LuaValue.NIL)
+    while (!n.arg1.isnil) {
+      val key = n.arg1.checkjstring()
+      val value = n.arg(2).checkjstring()
+      if (key != "main") params += key -> value
+      n = table.next(n.arg1)
+    }
+    val main = table.get("main").checkjstring()
+    RawWikiTemplate(main, params.result())
   }
 }
