@@ -38,32 +38,34 @@ case class RawWikiTemplate(main: String, params: Map[String, String]) extends Cl
   def wikify = "{{" + main + params.foldLeft("")((acc, p) => s"$acc|${p._1}=${p._2}") + "}}"
 }
 case class WikiTemplate(main: String, params: Seq[WikiTextAst]) extends WikiTextAst {
-  def clarify(clarifier: Clarifier) = for {
-    newParams <- params.partitionMap(_.clarify(clarifier)) match {
-      case (Nil, rights) => {
-        var unnamed = Seq[String]()
-        var named = scala.collection.mutable.HashMap[String, String]()
-        rights.foreach(_.split("=", 2) match {
-          case Array(full) => unnamed :+ full
-          case Array(name, value) => named += name -> value
-        })
-        var id = 0
-        val generator = { () =>
-          id += 1
-          var test = s"$id"
-          while (named.contains(test)) {
+  def clarify(clarifier: Clarifier) = {
+    for {
+      newParams <- params.partitionMap(_.clarify(clarifier)) match {
+        case (Nil, rights) => {
+          var unnamed = Seq[String]()
+          var named = scala.collection.mutable.HashMap[String, String]()
+          rights.foreach(_.split("=", 2) match {
+            case Array(full) => unnamed :+= full
+            case Array(name, value) => named += name -> value
+          })
+          var id = 0
+          val generator = { () =>
             id += 1
-            test = s"$id"
+            var test = s"$id"
+            while (named.contains(test)) {
+              id += 1
+              test = s"$id"
+            }
+            test
           }
-          test
+          unnamed.foreach(named += generator() -> _)
+          Right(named.toMap)
         }
-        unnamed.foreach(named += generator() -> _)
-        Right(named.toMap)
+        case (lefts, _) => Left(lefts.flatten.toVector)
       }
-      case (lefts, _) => Left(lefts.flatten.toVector)
-    }
-    template <- clarifier(RawWikiTemplate(main, newParams)).left.map(Vector(_))
-  } yield template
+      template <- clarifier(RawWikiTemplate(main, newParams)).left.map(Vector(_))
+    } yield template
+  }
 }
 case class WikiLink(display: WikiText, link: WikiText) extends WikiTextAst {
   def clarify(clarifier: Clarifier) = display.clarify(clarifier)
@@ -200,8 +202,8 @@ object WikiParser {
       }
       text <- wikitext.map { case (section, j) =>
         j.clarify({
-          case template @ RawWikiTemplate(main, params) =>
-            Jsons.expandTemplate(word, template)
+          case template: RawWikiTemplate =>
+            Processor.sandbox(word, template)
         })
       }
     } yield text
@@ -242,21 +244,24 @@ object Processor {
   class Template(main: String) {
     private val map = collection.mutable.Map[String, String]()
     def set(property: String, value: String) = map += property -> value
-    def get(property: Array[String]) = 
+    def get(property: String) = {
       map.find(j => property.contains(j._1)).map(_._2).getOrElse("nil")
+    }
     def evaluate(word: String) = {
       Jsons.expandTemplate(word, RawWikiTemplate(main, map.toMap))
     }
+    def templateName = main
   }
   class Api {
-    // вместо преобразования просто сделать сам объект?
-    def hello = println("hello from java")
-    def plus(a: Int, b: Int) = a + b
     def template(main: String) = new Template(main)
   }
   val api = jse.CoerceJavaToLua.coerce(new Api)
 
-  def sandbox(script: String) = Try {
+  def sandbox(word: String, template: RawWikiTemplate) = Try {
+    val userscript = scala.io.Source.fromFile(s"/opt/widictor/${template.main}.lua").mkString
+    val script = s"api, word, template = ...\n$userscript"
+    val luaTemplate = new Template(template.main)
+    template.params.foreach(j => luaTemplate.set(j._1, j._2))
     val userGlobals = buildGlobals()
     userGlobals.load(new DebugLib)
     userGlobals.load(new TableLib)
@@ -269,7 +274,9 @@ object Processor {
     }
     val instructionLimit = 50
     sethook.invoke(LuaValue.varargsOf(Array(thread, hookfunc, LuaValue.EMPTYSTRING, LuaValue.valueOf(instructionLimit))))
-    thread.resume(api)
+    val out = thread.resume(LuaValue.varargsOf(Array(api, LuaValue.valueOf(word), jse.CoerceJavaToLua.coerce(luaTemplate))))
+    if (!out.arg1.toboolean) throw new Exception(out.arg(2).tojstring)
+    out.arg(2).tojstring
   }.toEither
 
   class ReadOnlyLuaTable(src: LuaValue) extends LuaTable {
@@ -286,24 +293,5 @@ object Processor {
     override def rawset(key: Int, value: LuaValue) = {}
     override def rawset(key: LuaValue, value: LuaValue) = {}
     override def remove(pos: Int) = LuaValue.NIL
-  }
-
-  def templateToLua(template: RawWikiTemplate) = {
-    val table = new LuaTable
-    table.set("main", LuaValue.valueOf(template.main))
-    template.params.foreach(j => table.set(j._1, LuaValue.valueOf(j._2)))
-  }
-  def templateFromLua(value: LuaValue) = Try {
-    val table = value.checktable()
-    val params = Map.newBuilder[String, String]
-    var n = table.next(LuaValue.NIL)
-    while (!n.arg1.isnil) {
-      val key = n.arg1.checkjstring()
-      val value = n.arg(2).checkjstring()
-      if (key != "main") params += key -> value
-      n = table.next(n.arg1)
-    }
-    val main = table.get("main").checkjstring()
-    RawWikiTemplate(main, params.result())
   }
 }
