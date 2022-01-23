@@ -186,7 +186,7 @@ class WikiParser(val input: ParserInput, val langFilter: String) extends Parser 
   }}
 }
 object WikiParser {
-  def run(source: String, lang: String) = {
+  def run(source: String, lang: String, langCode: String) = {
     val word = "manger"
     val onError = { parser: WikiParser => { z: Throwable => z match {
       case e: ParseError => parser.formatError(e)
@@ -203,7 +203,7 @@ object WikiParser {
       text <- wikitext.map { case (section, j) =>
         j.clarify({
           case template: RawWikiTemplate =>
-            Processor.sandbox(word, template)
+            Processor.sandbox(word, langCode, template)
         })
       }
     } yield text
@@ -245,21 +245,44 @@ object Processor {
     private val map = collection.mutable.Map[String, String]()
     def set(property: String, value: String) = map += property -> value
     def get(property: String) = {
-      map.find(j => property.contains(j._1)).map(_._2).getOrElse("nil")
+      map.find(j => property.contains(j._1)).map(_._2).getOrElse(null)
     }
     def evaluate(word: String) = {
-      Jsons.expandTemplate(word, RawWikiTemplate(main, map.toMap))
+      Jsons.expandTemplate(word, RawWikiTemplate(main, map.toMap)) match {
+        case Left(e) => throw e
+        case Right(r) => r
+      }
     }
     def templateName = main
   }
-  class Api {
-    def template(main: String) = new Template(main)
-  }
-  val api = jse.CoerceJavaToLua.coerce(new Api)
 
-  def sandbox(word: String, template: RawWikiTemplate) = Try {
+  class WordData {
+    val before = collection.mutable.HashSet[String]()
+    val after = collection.mutable.HashSet[String]()
+  }
+  class Api(data: WordData) {
+    import scala.util.matching.Regex
+
+    def link(word: String, category: String) = category match {
+      case "before" => data.before += word
+      case "after" => data.after += word
+      case _ =>
+    }
+    def template(main: String) = new Template(main)
+    def find(source: String, regex: String) = {
+      regex.r.findAllIn(source)
+        .matchData
+        .take(1).nextOption
+        .map(_.subgroups.toArray)
+        .getOrElse(Array())
+    }
+  }
+
+  def sandbox(word: String, language: String, template: RawWikiTemplate) = Try {
+    val data = new WordData
+    val api = jse.CoerceJavaToLua.coerce(new Api(data))
     val userscript = scala.io.Source.fromFile(s"/opt/widictor/${template.main}.lua").mkString
-    val script = s"api, word, template = ...\n$userscript"
+    val script = s"api, word, lang, template = ...\n$userscript"
     val luaTemplate = new Template(template.main)
     template.params.foreach(j => luaTemplate.set(j._1, j._2))
     val userGlobals = buildGlobals()
@@ -274,8 +297,14 @@ object Processor {
     }
     val instructionLimit = 50
     sethook.invoke(LuaValue.varargsOf(Array(thread, hookfunc, LuaValue.EMPTYSTRING, LuaValue.valueOf(instructionLimit))))
-    val out = thread.resume(LuaValue.varargsOf(Array(api, LuaValue.valueOf(word), jse.CoerceJavaToLua.coerce(luaTemplate))))
+    val out = thread.resume(LuaValue.varargsOf(Array(
+      api,
+      LuaValue.valueOf(word),
+      LuaValue.valueOf(language),
+      jse.CoerceJavaToLua.coerce(luaTemplate)
+    )))
     if (!out.arg1.toboolean) throw new Exception(out.arg(2).tojstring)
+    println(s"DATA: ${data.before}, ${data.after}")
     out.arg(2).tojstring
   }.toEither
 
